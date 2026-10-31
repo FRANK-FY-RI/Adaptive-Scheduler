@@ -89,8 +89,8 @@ J4,8,3,1
 ```
 
 * `job_id`: Unique identifier (string or integer).
-* `arrival_time`: Integer timestamp ($\ge 0$).
-* `runtime`: Integer duration ($> 0$).
+* `arrival_time`: Integer timestamp ($t \ge 0$).
+* `runtime`: Integer duration ($t > 0$).
 * `required_cores`: Integer CPU cores ($1 \le \text{cores} \le \text{total\_cores}$).
 
 ---
