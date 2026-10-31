@@ -1,0 +1,6 @@
+job_id,arrival_time,runtime,required_cores
+J1,0,15,4
+J2,2,8,2
+J3,5,20,8
+J4,7,4,1
+J5,12,10,4
