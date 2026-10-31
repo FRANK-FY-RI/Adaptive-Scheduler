@@ -3,10 +3,10 @@
 import argparse
 from pathlib import Path
 
-from .engine import SimulationEngine
-from .models import ClusterConfig, SimulationSettings
-from .policies import FIFOPolicy, SJFPolicy
-from .workload import load_workload_from_csv
+from adaptive_scheduler.engine import SimulationEngine
+from adaptive_scheduler.models import ClusterConfig, SimulationSettings
+from adaptive_scheduler.policies import FIFOPolicy, SJFPolicy
+from adaptive_scheduler.workload import load_workload_from_csv
 
 
 def run_experiment(csv_path: str, cores: int, policy_name: str) -> None:

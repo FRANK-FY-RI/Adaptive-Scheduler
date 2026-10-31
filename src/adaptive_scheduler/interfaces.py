@@ -1,7 +1,7 @@
 """Common scheduling strategy interface (ENG-FR-12, ENG-NFR-02)."""
 
 from typing import Protocol, runtime_checkable
-from .models import JobId, SchedulerContext
+from adaptive_scheduler.models import JobId, SchedulerContext
 
 
 @runtime_checkable

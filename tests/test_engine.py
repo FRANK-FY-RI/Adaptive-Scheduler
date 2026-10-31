@@ -2,7 +2,7 @@
 
 import unittest
 
-from src.engine import (
+from adaptive_scheduler.engine import (
     ClusterConfig,
     ConfigurationError,
     ExecutionRecord,
@@ -17,7 +17,7 @@ from src.engine import (
     SimulationSettings,
     SimulationStalledError,
 )
-from src.policies import (FIFOPolicy, SJFPolicy)
+from adaptive_scheduler.policies import (FIFOPolicy, SJFPolicy)
 
 
 class TestSimulationEngineComplete(unittest.TestCase):
