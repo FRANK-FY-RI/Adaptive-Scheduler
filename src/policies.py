@@ -1,6 +1,6 @@
 """Reference scheduling strategies for testing and baseline comparisons (Section 8, Section 13)."""
 
-from models import JobId, SchedulerContext, make_job_sort_key
+from .models import JobId, SchedulerContext, make_job_sort_key
 
 
 class FIFOPolicy:

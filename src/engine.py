@@ -5,15 +5,15 @@ import heapq
 import time
 from typing import Iterable
 
-from exceptions import (
+from .exceptions import (
     ConfigurationError,
     InvalidSchedulingDecisionError,
     InvariantViolationError,
     SimulationError,
     SimulationStalledError,
 )
-from interfaces import SchedulingPolicy
-from models import (
+from .interfaces import SchedulingPolicy
+from .models import (
     ClusterConfig,
     EventType,
     ExecutionRecord,

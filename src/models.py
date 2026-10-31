@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import Iterable, Union
 
-from exceptions import ConfigurationError
+from .exceptions import ConfigurationError
 
 JobId = Union[str, int]
 
