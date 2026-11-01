@@ -1,14 +1,40 @@
 # Adaptive Scheduler
 
-A discrete-event cluster simulation testbed for developing, evaluating, and benchmarking HPC job scheduling algorithms.
+A discrete-event HPC cluster scheduling simulator for developing,
+evaluating, and comparing job-scheduling algorithms.
 
-The simulation engine handles clock progression, resource allocation, and cluster-state invariants. Researchers can focus on scheduling strategies and evaluate them against workload traces without modifying the engine.
+The engine owns simulation time, job lifecycle transitions, event
+processing, CPU-core allocation, completion handling, and invariant
+checks. Scheduling policies receive an immutable snapshot of the cluster
+state and propose which waiting job should run.
+
+The project includes non-preemptive policies, a preemptive scheduling
+extension, backfilling, an adaptive multi-heuristic policy, and support
+for researcher-defined policies.
+
+## Features
+
+-   Discrete-event simulation driven by job arrivals and completions.
+-   Multi-core cluster resource allocation.
+-   Built-in FIFO and Shortest Job First (SJF) policies, with strict and
+    fit/non-blocking variants.
+-   EASY backfilling policy.
+-   Adaptive multi-heuristic policy that increases the influence of
+    waiting time under starvation pressure.
+-   Optional policy-driven preemption, with remaining-runtime accounting
+    and job resumption.
+-   Built-in multi-core SRTF-inspired preemptive policy.
+-   Custom policy registration and discovery.
+-   Load a researcher policy from a standalone Python file.
+-   Immutable `SchedulerContext` snapshots and engine invariant checks.
+-   Profiling counters and per-job execution records.
 
 ## Project structure
 
-The project uses the `src` layout. The importable application package is `adaptive_scheduler`; `src/` is only the source-code container.
+The repository uses a `src` layout. The importable package is
+`adaptive_scheduler`; `src/` is only the source-code container.
 
-```text
+``` text
 adaptive_scheduler/
 ├── pyproject.toml
 ├── README.md
@@ -19,42 +45,51 @@ adaptive_scheduler/
 │       ├── exceptions.py
 │       ├── interfaces.py
 │       ├── models.py
-│       ├── policy_loader.py
-│       ├── run_simulation.py
 │       ├── workload.py
+│       ├── run_simulation.py
+│       ├── policy_loader.py
 │       └── policies/
 │           ├── __init__.py
+│           ├── registry.py
 │           ├── fifo.py
-│           └── sjf.py
-├── tests/
-│   ├── __init__.py
-│   ├── test_engine.py
-│   └── test_policy_loader.py
+│           ├── sjf.py
+│           ├── adaptive.py
+│           ├── easy_backfill.py
+│           └── srtf.py
 ├── examples/
-│   └── researcher_policy.py
+│   ├── researcher_policy.py
+│   └── researcher_preemptive_policy.py
+├── tests/
+│   ├── test_engine.py
+│   ├── test_policies.py
+│   ├── test_preemption.py
+│   └── test_policy_loader.py
 └── workloads/
     └── synthetic_workload.csv
 ```
 
-## 1. Quickstart
+The exact set of files may vary as the project evolves.
 
-### Prerequisites
+## 1. Setup
 
-- Python 3.10 or newer
-- `venv` and `pip`
-- No third-party runtime dependencies are currently required by the simulation engine.
+### Requirements
+
+-   Python 3.10 or newer.
+-   `venv` and `pip`.
+-   The simulator's core implementation uses the Python standard
+    library. Tests use `pytest` where specified.
 
 ### Create and activate a virtual environment
 
-Run these commands from the project root:
+Run from the repository root:
 
-```bash
+``` bash
 python3 -m venv .venv
 ```
 
-Activate the environment using the command for your shell:
+Activate it:
 
-```bash
+``` bash
 # Bash / Zsh
 source .venv/bin/activate
 
@@ -62,101 +97,238 @@ source .venv/bin/activate
 source .venv/bin/activate.fish
 ```
 
-### Install the project in editable mode
+### Install the package
 
-```bash
+``` bash
 python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-Editable installation makes the `adaptive_scheduler` package importable in the virtual environment while you develop. You do not need to reinstall it after every source-code change.
+Install test dependencies if they are not already included in your
+development environment:
 
-### Run a simulation with a built-in policy
+``` bash
+python -m pip install pytest
+```
 
-```bash
+Editable installation makes `adaptive_scheduler` importable while you
+work on the source files. You generally do not need to reinstall after
+changing Python source code.
+
+## 2. Run a simulation
+
+Run the CLI as a module from the repository root:
+
+``` bash
+# FIFO, fit/non-blocking variant
 python -m adaptive_scheduler.run_simulation \
     --csv workloads/synthetic_workload.csv \
     --cores 8 \
     --policy fifo-fit
+
+# SJF
+python -m adaptive_scheduler.run_simulation \
+    --csv workloads/synthetic_workload.csv \
+    --cores 8 \
+    --policy sjf
+
+# Preemptive SRTF-inspired policy
+python -m adaptive_scheduler.run_simulation \
+    --csv workloads/synthetic_workload.csv \
+    --cores 8 \
+    --policy srtf
 ```
 
-Available built-in policies:
+The CLI currently exposes `fifo`, `fifo-fit`, `sjf`, `sjf-fit`, and
+`srtf` as built-in `--policy` choices. `AdaptivePolicy` and
+`EASYBackfillPolicy` are available through the policy package API; do
+not assume they are CLI choices unless the CLI has been extended to
+include them.
 
-| CLI value | Behavior |
-|---|---|
-| `fifo` | FIFO with strict head-of-line scheduling. |
-| `fifo-fit` | FIFO while allowing a later waiting job to run if it fits. |
-| `sjf` | Shortest Job First with strict head-of-line scheduling. |
-| `sjf-fit` | Shortest Job First while allowing a later job to run if it fits. |
+Use the CLI help for the exact options in your checkout:
 
-The default policy is `fifo-fit`, so `--policy` can be omitted.
-
-Run the application as a module from the project root. Do not execute `run_simulation.py` by its file path; the module invocation ensures it runs in its package context.
-
-To see all CLI options:
-
-```bash
+``` bash
 python -m adaptive_scheduler.run_simulation --help
 ```
 
-## 2. Write and run a researcher-defined policy
+Use `python -m ...` rather than executing
+`src/adaptive_scheduler/run_simulation.py` directly. Module execution
+preserves the package import context.
 
-A researcher can implement a scheduling strategy in a separate Python file. The file does not need to be placed inside the `adaptive_scheduler` package, and adding a new policy does not require modifying the simulation engine or the built-in policy registry.
+## 3. Built-in scheduling policies
 
-### Step 1: Implement the policy interface
+Policies implement the `SchedulingPolicy` interface and operate on a
+read-only `SchedulerContext`.
 
-Create a file such as `my_policy.py`:
+  -------------------------------------------------------------------------
+  Policy                 Scheduling behavior                    Preemptive?
+  ---------------------- --------------------- ----------------------------
+  `FIFOPolicy`           Selects by arrival                              No
+                         time, with            
+                         deterministic job-ID  
+                         tie-breaking.         
+                         Supports strict       
+                         head-of-line blocking 
+                         or scanning for a job 
+                         that fits.            
 
-```python
+  `SJFPolicy`            Selects the job with                            No
+                         the shortest          
+                         requested runtime,    
+                         with deterministic    
+                         tie-breaking.         
+                         Supports strict or    
+                         fit/non-blocking      
+                         selection.            
+
+  `AdaptivePolicy`       Uses multiple                No, unless separately
+                         scheduling signals                        extended
+                         and dynamically       
+                         increases the         
+                         waiting-time weight   
+                         as starvation         
+                         pressure grows.       
+
+  `EASYBackfillPolicy`   Allows safe short                               No
+                         jobs to backfill      
+                         while protecting the  
+                         head job's            
+                         reservation.          
+
+  `SRTFPolicy`           Multi-core                                     Yes
+                         SRTF-inspired policy  
+                         that considers        
+                         remaining runtime and 
+                         can preempt running   
+                         jobs to admit a       
+                         shorter waiting job.  
+  -------------------------------------------------------------------------
+
+### Use policies programmatically
+
+``` python
+from adaptive_scheduler.engine import SimulationEngine
+from adaptive_scheduler.models import ClusterConfig
+from adaptive_scheduler.policies import AdaptivePolicy
+from adaptive_scheduler.workload import load_workload_from_csv
+
+jobs = load_workload_from_csv("workloads/synthetic_workload.csv")
+
+engine = SimulationEngine(
+    total_cores=ClusterConfig(8),
+    jobs=jobs,
+    policy=AdaptivePolicy(),
+)
+
+result = engine.run()
+print(f"Makespan: {result.final_time}")
+```
+
+Other policies can be imported from `adaptive_scheduler.policies`:
+
+``` python
+from adaptive_scheduler.policies import (
+    AdaptivePolicy,
+    EASYBackfillPolicy,
+    FIFOPolicy,
+    SJFPolicy,
+    SRTFPolicy,
+)
+```
+
+## 4. Preemptive scheduling
+
+Preemption is an optional engine capability. A policy that only
+implements `select_next_job(context)` remains non-preemptive. A policy
+opts into preemption by additionally implementing the optional hook:
+
+``` python
+def select_jobs_to_preempt(
+    self,
+    context: SchedulerContext,
+) -> tuple[JobId, ...]:
+    """Return IDs of currently running jobs that should be suspended."""
+```
+
+At an event timestamp, the engine processes completion and arrival
+events, asks the policy whether any running jobs should be preempted,
+and then performs dispatch. The engine validates the proposal, releases
+the selected jobs' cores, invalidates their pending completion events,
+and returns them to the waiting state.
+
+When a suspended job resumes, it runs only for its remaining service
+time. Its original runtime is not restarted.
+
+### Current preemption model and limitations
+
+-   **Zero context-switch overhead:** preemption and resumption consume
+    no simulated time.
+-   **Event-driven decisions:** policies make preemption decisions at
+    simulation event timestamps (for example, job arrivals or
+    completions), not at arbitrary periodic time slices.
+-   **Gang scheduling:** a multi-core job is suspended as a whole and
+    releases all cores allocated to it.
+-   **No checkpoint cost or migration model:** checkpointing,
+    restoration, migration, and preemption penalties are not currently
+    represented.
+
+### Execution records
+
+A completed job produces one execution record, even if it was preempted
+multiple times. The record includes:
+
+-   `runtime`: total CPU service demand.
+-   `waiting_time`: time spent waiting before first execution and
+    between execution segments.
+-   `execution_segments`: the half-open intervals
+    `[start_time, finish_time)` during which the job executed.
+-   `preemption_count`: number of times the job was suspended.
+
+The execution-segment durations should sum to the job's requested
+runtime. Turnaround time is `finish_time - arrival_time`; it includes
+both execution and waiting.
+
+## 5. Implement a custom policy
+
+A non-preemptive researcher policy can be defined in a standalone Python
+file. It does not need to be added to the simulator package.
+
+For example, save this as `my_policy.py`:
+
+``` python
 from adaptive_scheduler import JobId, SchedulerContext
 
 
 class MyPolicy:
-    """Choose the shortest job that fits in the available capacity."""
-
     def select_next_job(self, context: SchedulerContext) -> JobId | None:
-        runnable_jobs = [
-            job
-            for job in context.waiting_jobs
+        runnable = [
+            job for job in context.waiting_jobs
             if job.required_cores <= context.available_cores
         ]
 
-        if not runnable_jobs:
+        if not runnable:
             return None
 
-        selected_job = min(
-            runnable_jobs,
+        return min(
+            runnable,
             key=lambda job: (job.runtime, job.arrival_time, str(job.job_id)),
-        )
-        return selected_job.job_id
+        ).job_id
 ```
 
-The policy contract is defined by `adaptive_scheduler.interfaces.SchedulingPolicy`.
+Run it using the CLI:
 
-A custom policy must:
-
-- Provide a callable `select_next_job(context)` method.
-- Return the `job_id` of a waiting job that can be started with the currently available cores, or return `None` to defer scheduling.
-- Have a zero-argument constructor in the current implementation.
-
-The engine validates each proposed job before starting it. Policies should make decisions using the supplied `SchedulerContext` and must not attempt to mutate engine state.
-
-### Step 2: Run the custom policy
-
-From the project root, with the virtual environment active and the package installed in editable mode:
-
-```bash
+``` bash
 python -m adaptive_scheduler.run_simulation \
     --csv workloads/synthetic_workload.csv \
     --cores 8 \
     --policy-file ./my_policy.py
 ```
 
-When the file contains exactly one policy class defined in that file, the loader selects it automatically.
+If the file defines exactly one policy class, the loader can infer which
+class to instantiate. If it defines multiple policy classes, specify
+one:
 
-If the file contains multiple policy classes, choose one with `--policy-class`:
-
-```bash
+``` bash
 python -m adaptive_scheduler.run_simulation \
     --csv workloads/synthetic_workload.csv \
     --cores 8 \
@@ -164,61 +336,110 @@ python -m adaptive_scheduler.run_simulation \
     --policy-class MyPolicy
 ```
 
-Use either `--policy` (a built-in policy) or `--policy-file` (a researcher policy), not both. `--policy-class` is only valid with `--policy-file`.
+Custom policy classes currently use a zero-argument constructor. They
+must implement `select_next_job(context)` and return a waiting job ID or
+`None`.
 
-An example researcher policy is available at `examples/researcher_policy.py`.
+### Implement a preemptive custom policy
 
-### Step 3: Load a policy programmatically
+In addition to `select_next_job`, implement `select_jobs_to_preempt`:
 
-The loader can also be used without the CLI:
+``` python
+from adaptive_scheduler import JobId, SchedulerContext
 
-```python
-from adaptive_scheduler import ClusterConfig, SimulationEngine
-from adaptive_scheduler.policy_loader import load_policy_from_file
-from adaptive_scheduler.workload import load_workload_from_csv
 
-jobs = load_workload_from_csv("workloads/synthetic_workload.csv")
-policy = load_policy_from_file("./my_policy.py")
+class MyPreemptivePolicy:
+    def select_next_job(self, context: SchedulerContext) -> JobId | None:
+        # Select a waiting job that fits in currently available capacity.
+        runnable = [
+            job for job in context.waiting_jobs
+            if job.required_cores <= context.available_cores
+        ]
+        if not runnable:
+            return None
+        return min(runnable, key=lambda job: job.runtime).job_id
 
-engine = SimulationEngine(
-    total_cores=ClusterConfig(8),
-    jobs=jobs,
-    policy=policy,
-)
-
-result = engine.run()
-print(f"Makespan: {result.final_time}")
+    def select_jobs_to_preempt(
+        self,
+        context: SchedulerContext,
+    ) -> tuple[JobId, ...]:
+        # Replace with your preemption criterion.
+        return ()
 ```
 
-To choose a class explicitly when the file defines more than one policy:
+The example above demonstrates the interface only; returning an empty
+tuple means it does not actually preempt any jobs. A complete policy
+should compare waiting jobs against running jobs and return only the
+running job IDs it intends to suspend.
 
-```python
-policy = load_policy_from_file("./my_policies.py", class_name="MyPolicy")
+Policy files are imported and executed as ordinary Python code with the
+permissions of the simulation process. The loader is not a security
+sandbox. Only load policy files you trust.
+
+## 6. Policy registration and discovery
+
+Policies can also be registered in-process and instantiated by name.
+
+``` python
+from adaptive_scheduler.policies import register_policy, get_policy
+
+
+class LargestJobFirstPolicy:
+    def select_next_job(self, context):
+        runnable = [
+            job for job in context.waiting_jobs
+            if job.required_cores <= context.available_cores
+        ]
+        if not runnable:
+            return None
+        return max(runnable, key=lambda job: job.required_cores).job_id
+
+
+register_policy("largest-job-first", LargestJobFirstPolicy)
+
+policy = get_policy("largest-job-first")
 ```
 
-### Policy API: `SchedulerContext`
+Registration also supports decorator usage:
 
-The policy receives an immutable snapshot of the simulation state:
+``` python
+@register_policy("largest-job-first")
+class LargestJobFirstPolicy:
+    ...
+```
 
-| Attribute | Description |
-|---|---|
-| `current_time` | Current simulation timestamp. |
-| `total_cores` | Total CPU cores in the cluster. |
-| `available_cores` | CPU cores currently available for scheduling. |
-| `allocated_cores` | CPU cores currently allocated to running jobs. |
-| `waiting_jobs` | Tuple of waiting `JobSpec` objects. |
-| `running_jobs` | Tuple of read-only running-job views. |
-| `reservations` | Tuple of active reservation records. |
+The registry rejects duplicate custom names. `discover_policies()`
+returns the built-in and explicitly registered policy classes by their
+normalized names. The `_CUSTOM_REGISTRY` symbol is internal and is
+exposed only for compatibility with the current policy tests;
+application code should use `register_policy`, `discover_policies`, and
+`get_policy`.
 
-Each waiting `JobSpec` provides `job_id`, `arrival_time`, `runtime`, and `required_cores`.
+## 7. Scheduler context
 
-**Security note:** A policy file is executable Python code and runs with the same permissions as the simulation process. The policy loader is an import mechanism, not a sandbox. Only load policy files you trust.
+The engine passes policies an immutable `SchedulerContext` snapshot. The
+commonly used fields include:
 
-## 3. Workload CSV format
+-   `context.current_time`: current simulation timestamp.
+-   `context.total_cores`: total cluster CPU capacity.
+-   `context.available_cores`: currently free CPU cores.
+-   `context.allocated_cores`: currently allocated CPU cores.
+-   `context.waiting_jobs`: waiting `JobSpec` values.
+-   `context.running_jobs`: running-job views, including start and
+    expected finish information.
+-   `context.reservations`: active reservation information used by
+    reservation-aware policies.
 
-Workload files are CSV files with the following schema:
+Preemption-aware contexts may additionally expose remaining-runtime
+information through running-job views or waiting-job views. Consult the
+model definitions in `src/adaptive_scheduler/models.py` for the exact
+fields available in the current checkout.
 
-```csv
+## 8. Workload CSV format
+
+Workload files use this schema:
+
+``` csv
 job_id,arrival_time,runtime,required_cores
 J1,0,10,4
 J2,2,6,2
@@ -226,45 +447,65 @@ J3,5,15,8
 J4,8,3,1
 ```
 
-| Column | Meaning |
-|---|---|
-| `job_id` | Unique job identifier (string or integer). |
-| `arrival_time` | Non-negative integer simulation timestamp. |
-| `runtime` | Positive integer job duration. |
-| `required_cores` | Number of CPU cores required by the job; must be at least 1 and no greater than the cluster capacity. |
+  -----------------------------------------------------------------------
+  Column                              Meaning
+  ----------------------------------- -----------------------------------
+  `job_id`                            Unique job identifier (string or
+                                      integer).
 
-The CSV header must contain all four column names shown above.
+  `arrival_time`                      Non-negative integer simulation
+                                      timestamp.
 
-## 4. Running tests
+  `runtime`                           Positive integer CPU service
+                                      duration.
 
-Run the complete test suite from the project root with the virtual environment active:
+  `required_cores`                    Number of CPU cores required by the
+                                      job; at least 1 and no greater than
+                                      cluster capacity.
+  -----------------------------------------------------------------------
 
-```bash
+The simulator assumes each job's arrival time, runtime, and core
+requirement are known from the workload trace.
+
+## 9. Testing
+
+Run the full test suite from the repository root with the virtual
+environment activated:
+
+``` bash
 python -m unittest discover -s tests -v
 ```
 
-Run only the policy-loader tests:
+Run policy tests with pytest:
 
-```bash
+``` bash
+pytest tests/test_policies.py -v
+```
+
+Run individual test modules as needed:
+
+``` bash
+python -m unittest tests.test_engine -v
+python -m unittest tests.test_preemption -v
 python -m unittest tests.test_policy_loader -v
 ```
 
-Run only the engine tests:
+If a test module uses pytest fixtures or `pytest.raises`, invoke it with
+`pytest`.
 
-```bash
-python -m unittest tests.test_engine -v
-```
+## 10. Development conventions
 
-## 5. Development conventions
-
-To keep execution and imports consistent across contributors:
-
-- Use absolute imports beginning with `adaptive_scheduler`, for example `from adaptive_scheduler.models import JobSpec`.
-- Keep application modules inside `src/adaptive_scheduler/`.
-- Keep built-in scheduling policies inside `src/adaptive_scheduler/policies/`.
-- Keep researcher examples in `examples/`; researcher policy files can also live outside the repository.
-- Keep tests inside `tests/`.
-- Run commands from the repository root.
-- Run application modules with `python -m adaptive_scheduler.module_name`.
-- Install the project in each developer's virtual environment with `python -m pip install -e .`.
-- Do not use `src/` in import statements; it is a source directory, not part of the package's import name.
+-   Use absolute imports beginning with `adaptive_scheduler`, for
+    example `from adaptive_scheduler.models import JobId`.
+-   Keep application modules inside `src/adaptive_scheduler/`.
+-   Keep tests inside `tests/`.
+-   Run commands from the repository root.
+-   Run application modules with
+    `python -m adaptive_scheduler.module_name`.
+-   Install the project in editable mode in each developer's virtual
+    environment using `python -m pip install -e .`.
+-   Do not write imports such as `from src...`; `src/` is a source
+    directory, not part of the package's import name.
+-   Keep scheduling decisions inside policy classes; the engine remains
+    responsible for state transitions, event management, and resource
+    accounting.
