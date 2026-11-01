@@ -1,0 +1,37 @@
+{
+  "strategy": "easy_backfill",
+  "workload": "synth:wide_jobs:n=300:seed=13",
+  "cluster_cores": 16,
+  "total_jobs": 300,
+  "average_waiting_time": 2410.193333333333,
+  "max_waiting_time": 4386,
+  "cpu_utilization": 77.26418448722507,
+  "makespan": 19687,
+  "bounded_slowdown": 48.2462802878382,
+  "tau": 10,
+  "average_turnaround_time": 2479.9,
+  "utilization_interval": "first arrival to last completion (makespan)",
+  "metadata": {
+    "run_id": "3d54cbdc40bd",
+    "workload_id": "synth:wide_jobs:n=300:seed=13",
+    "workload_params": {
+      "source": "synthetic",
+      "generator": "wide_jobs",
+      "seed": 13,
+      "n_jobs": 300,
+      "cluster_cores": 16,
+      "offered_load": 1.0,
+      "mean_interarrival": 50.703333,
+      "runtime_estimate_error": 0.0
+    },
+    "strategy": "easy_backfill",
+    "strategy_params": {},
+    "strategy_dispatch_note": "team engine easy_backfill (EASYBackfillPolicy, {}): EASY backfilling: queue in arrival order; if the head job does not fit the free CPU cores, a later job starts only if it finishes by the head job's reserved start or fits in the CPU cores left over at that time",
+    "cluster_cores": 16,
+    "engine": "team",
+    "engine_version": "adaptive-scheduler 0.1.0@33a6d3a6a1f0",
+    "package_version": "0.1.0",
+    "config_hash": "d5e138e04845",
+    "timestamp": "2026-11-01T08:32:03+00:00"
+  }
+}

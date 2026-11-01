@@ -1,0 +1,43 @@
+{
+  "strategy": "adaptive",
+  "workload": "synth:mixed:n=300:seed=11",
+  "cluster_cores": 16,
+  "total_jobs": 300,
+  "average_waiting_time": 552.6233333333333,
+  "max_waiting_time": 7125,
+  "cpu_utilization": 84.07154275495827,
+  "makespan": 18454,
+  "bounded_slowdown": 7.342922429359925,
+  "tau": 10,
+  "average_turnaround_time": 703.22,
+  "utilization_interval": "first arrival to last completion (makespan)",
+  "metadata": {
+    "run_id": "aecbf0e94fb1",
+    "workload_id": "synth:mixed:n=300:seed=11",
+    "workload_params": {
+      "source": "synthetic",
+      "generator": "mixed",
+      "seed": 11,
+      "n_jobs": 300,
+      "cluster_cores": 16,
+      "offered_load": 1.0,
+      "mean_interarrival": 51.715208,
+      "runtime_estimate_error": 0.0
+    },
+    "strategy": "adaptive",
+    "strategy_params": {
+      "base_wait_weight": 0.35,
+      "base_short_weight": 0.45,
+      "base_pack_weight": 0.2,
+      "adaptation_gain": 0.0,
+      "enable_backfill": true
+    },
+    "strategy_dispatch_note": "team engine adaptive (AdaptivePolicy, {'base_wait_weight': 0.35, 'base_short_weight': 0.45, 'base_pack_weight': 0.2, 'adaptation_gain': 0.0, 'enable_backfill': True}): utility-ranked: U = w_wait*wait + w_short*shortness + w_pack*width; weights shift toward waiting time as more queued jobs wait longer than the mean queued runtime, and toward width as CPU cores sit idle; if the top job does not fit, backfilling as in easy_backfill when enable_backfill is true, else nothing starts",
+    "cluster_cores": 16,
+    "engine": "team",
+    "engine_version": "adaptive-scheduler 0.1.0@33a6d3a6a1f0",
+    "package_version": "0.1.0",
+    "config_hash": "8deac2cfa04a",
+    "timestamp": "2026-11-01T08:34:11+00:00"
+  }
+}

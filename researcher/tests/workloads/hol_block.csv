@@ -1,0 +1,7 @@
+# cluster_cores: 4 (set in tests/test_fake_engine.py)
+# 3-core job (2) at the head while job 1 holds 2 CPU cores; 1-core jobs queue behind it
+job_id,arrival_time,runtime,required_cores
+1,0,10,2
+2,1,5,3
+3,2,2,1
+4,3,2,1
