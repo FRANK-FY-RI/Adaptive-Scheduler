@@ -2,10 +2,11 @@
 
 import unittest
 
-from adaptive_scheduler.engine import (
+from adaptive_scheduler import (
     ClusterConfig,
     ConfigurationError,
     ExecutionRecord,
+    ExecutionSegment,
     InvalidSchedulingDecisionError,
     InvariantViolationError,
     JobId,
@@ -17,7 +18,7 @@ from adaptive_scheduler.engine import (
     SimulationSettings,
     SimulationStalledError,
 )
-from adaptive_scheduler.policies import (FIFOPolicy, SJFPolicy)
+from adaptive_scheduler.policies import FIFOPolicy, SJFPolicy
 
 
 class TestSimulationEngineComplete(unittest.TestCase):
@@ -45,6 +46,8 @@ class TestSimulationEngineComplete(unittest.TestCase):
                 runtime=12,
                 waiting_time=0,
                 required_cores=4,
+                execution_segments=(ExecutionSegment(start_time=5, finish_time=17),),
+                preemption_count=0,
             ),
         )
         assert result.profile is not None

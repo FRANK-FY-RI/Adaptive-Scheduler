@@ -4,8 +4,8 @@ import csv
 from pathlib import Path
 from typing import Sequence
 
-from adaptive_scheduler.exceptions import ConfigurationError
-from adaptive_scheduler.models import JobSpec
+from .exceptions import ConfigurationError
+from .models import JobSpec
 
 
 def load_workload_from_csv(file_path: str | Path) -> list[JobSpec]:

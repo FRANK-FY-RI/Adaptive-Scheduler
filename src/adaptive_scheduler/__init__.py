@@ -1,18 +1,19 @@
-"""Public API for the AdaptiveSched simulation engine package (ENG-NFR-07)."""
+"""Public API for the Adaptive Scheduler simulation engine."""
 
-from .engine import SimulationEngine
-from .exceptions import (
+from adaptive_scheduler.engine import SimulationEngine
+from adaptive_scheduler.exceptions import (
     ConfigurationError,
     InvalidSchedulingDecisionError,
     InvariantViolationError,
     SimulationError,
     SimulationStalledError,
 )
-from .interfaces import SchedulingPolicy
-from .models import (
+from adaptive_scheduler.interfaces import PreemptiveSchedulingPolicy, SchedulingPolicy
+from adaptive_scheduler.models import (
     ClusterConfig,
     EventType,
     ExecutionRecord,
+    ExecutionSegment,
     JobId,
     JobLifecycleState,
     JobSpec,
@@ -23,6 +24,7 @@ from .models import (
     SimulationProfile,
     SimulationResult,
     SimulationSettings,
+    WaitingJobView,
     validate_cluster_config,
     validate_workload,
 )
@@ -32,11 +34,13 @@ __all__ = [
     "ConfigurationError",
     "EventType",
     "ExecutionRecord",
+    "ExecutionSegment",
     "InvalidSchedulingDecisionError",
     "InvariantViolationError",
     "JobId",
     "JobLifecycleState",
     "JobSpec",
+    "PreemptiveSchedulingPolicy",
     "ReservationInfo",
     "RunningJobView",
     "SchedulerContext",
@@ -48,6 +52,7 @@ __all__ = [
     "SimulationResult",
     "SimulationSettings",
     "SimulationStalledError",
+    "WaitingJobView",
     "validate_cluster_config",
     "validate_workload",
 ]

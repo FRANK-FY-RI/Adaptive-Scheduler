@@ -75,10 +75,34 @@ class JobSpec:
 
 @dataclass(frozen=True)
 class RunningJobView:
-    """Read-only snapshot of a currently executing job exposed to policies."""
+    """Read-only snapshot of a currently executing job exposed to policies.
+
+    ``start_time`` is the start of the current execution segment, not necessarily
+    the first time the job was dispatched. ``remaining_runtime`` is the remaining
+    CPU service requirement after accounting for all previous segments.
+    """
     job: JobSpec
     start_time: int
     expected_finish_time: int
+    remaining_runtime: int | None = None
+
+
+@dataclass(frozen=True)
+class WaitingJobView:
+    """Read-only view of a waiting job, including service left after preemption."""
+    job: JobSpec
+    remaining_runtime: int
+
+
+@dataclass(frozen=True)
+class ExecutionSegment:
+    """One contiguous interval during which a job occupied its requested cores."""
+    start_time: int
+    finish_time: int
+
+    @property
+    def duration(self) -> int:
+        return self.finish_time - self.start_time
 
 
 @dataclass(frozen=True)
@@ -103,6 +127,9 @@ class SchedulerContext:
     waiting_jobs: tuple[JobSpec, ...]
     running_jobs: tuple[RunningJobView, ...]
     reservations: tuple[ReservationInfo, ...] = ()
+    # Kept separate from ``waiting_jobs`` to preserve the existing JobSpec-based
+    # policy API while exposing remaining service to preemptive policies.
+    waiting_job_views: tuple[WaitingJobView, ...] = ()
 
     def earliest_available_time(self, required_cores: int) -> int:
         """Calculates the earliest timestamp >= current_time when `required_cores` will be free.
@@ -133,7 +160,13 @@ class SchedulerContext:
 
 @dataclass(frozen=True)
 class ExecutionRecord:
-    """Immutable execution record produced for each completed job (UC-E06, Section 10)."""
+    """Immutable execution record produced for each completed job.
+
+    ``runtime`` is total CPU service consumed, while ``waiting_time`` includes
+    both the initial queue delay and all waits between preemption and resumption.
+    ``execution_segments`` makes preemptive execution visible without losing the
+    one-record-per-job result model.
+    """
     job_id: JobId
     arrival_time: int
     start_time: int
@@ -141,6 +174,8 @@ class ExecutionRecord:
     runtime: int
     waiting_time: int
     required_cores: int
+    execution_segments: tuple[ExecutionSegment, ...] = ()
+    preemption_count: int = 0
 
 
 @dataclass(frozen=True)

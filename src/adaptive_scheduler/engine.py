@@ -1,6 +1,6 @@
 """Authoritative discrete-event simulation engine (AS-REQ-ENG-001)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import heapq
 import time
 from typing import Iterable
@@ -17,6 +17,7 @@ from adaptive_scheduler.models import (
     ClusterConfig,
     EventType,
     ExecutionRecord,
+    ExecutionSegment,
     JobId,
     JobLifecycleState,
     JobSpec,
@@ -27,6 +28,7 @@ from adaptive_scheduler.models import (
     SimulationProfile,
     SimulationResult,
     SimulationSettings,
+    WaitingJobView,
     make_job_sort_key,
     validate_cluster_config,
     validate_workload,
@@ -38,23 +40,33 @@ class _InternalJobState:
     """Mutable job tracking record strictly private to SimulationEngine."""
     spec: JobSpec
     state: JobLifecycleState = JobLifecycleState.PENDING_ARRIVAL
+    # First-ever start time, retained for backwards-compatible result semantics.
     start_time: int | None = None
+    # Start time of the currently active execution segment (None while not running).
+    current_start_time: int | None = None
     finish_time: int | None = None
+    # Remaining CPU service requirement; initialized from JobSpec.runtime.
+    remaining_runtime: int = 0
+    # Time at which the current waiting interval began.
+    waiting_since: int | None = None
+    total_waiting_time: int = 0
+    execution_segments: list[ExecutionSegment] = field(default_factory=list)
     start_count: int = 0
+    preemption_count: int = 0
     completion_count: int = 0
 
 
 class SimulationEngine:
     """Discrete-event cluster scheduling simulation engine (AS-REQ-ENG-001).
 
-    Simulation Assumptions (Section 3):
+    Simulation Assumptions:
     1. One cluster with a fixed number of CPU cores.
-    2. Jobs with known arrival time, runtime, and core requirement.
-    3. Non-preemptive execution.
-    4. Deterministic completion at `start_time + runtime`.
+    2. Jobs have known arrival time, total CPU runtime, and core requirement.
+    3. FIFO/SJF-style policies remain non-preemptive by default; a policy may opt
+       into preemption by implementing `select_jobs_to_preempt`.
+    4. Preemption has zero overhead and preserves remaining CPU runtime.
     5. No failures, cancellations, or runtime estimation errors.
-    6. Nonnegative integer simulation time.
-    7. CPU cores as the only resource type.
+    6. Nonnegative integer simulation time; CPU cores are the only resource type.
 
     Event Ordering & Dispatch Semantics (Section 8):
     1. Advance to the earliest event timestamp.
@@ -189,17 +201,23 @@ class SimulationEngine:
     @property
     def running_jobs(self) -> tuple[RunningJobView, ...]:
         """Returns a deterministic, read-only tuple of currently running jobs."""
-        return tuple(
-            RunningJobView(
-                job=self._job_states[jid].spec,
-                start_time=self._job_states[jid].start_time,  # type: ignore[arg-type]
-                expected_finish_time=(
-                    self._job_states[jid].start_time  # type: ignore[operator]
-                    + self._job_states[jid].spec.runtime
-                ),
+        views: list[RunningJobView] = []
+        for jid in sorted(self._running_ids, key=make_job_sort_key):
+            state = self._job_states[jid]
+            if state.current_start_time is None:
+                raise InvariantViolationError(
+                    f"Running job {jid!r} is missing its current_start_time."
+                )
+            views.append(
+                RunningJobView(
+                    job=state.spec,
+                    start_time=state.current_start_time,
+                    expected_finish_time=state.current_start_time + state.remaining_runtime,
+                    remaining_runtime=state.remaining_runtime,
+                )
             )
-            for jid in sorted(self._running_ids, key=make_job_sort_key)
-        )
+        return tuple(views)
+
 
     @property
     def completed_jobs(self) -> tuple[JobSpec, ...]:
@@ -250,12 +268,12 @@ class SimulationEngine:
                     f"({res.reserved_start_time}) < current_time ({self._current_time})."
                 )
             expected_finish = (
-                res.reserved_start_time + self._job_states[res.job_id].spec.runtime
+                res.reserved_start_time + self._job_states[res.job_id].remaining_runtime
             )
             if res.reserved_finish_time != expected_finish:
                 raise InvalidSchedulingDecisionError(
                     f"Reservation for job {res.job_id!r} has reserved_finish_time "
-                    f"({res.reserved_finish_time}) != reserved_start_time + runtime ({expected_finish})."
+                    f"({res.reserved_finish_time}) != reserved_start_time + remaining_runtime ({expected_finish})."
                 )
             if res.reserved_cores != self._job_states[res.job_id].spec.required_cores:
                 raise InvalidSchedulingDecisionError(
@@ -277,7 +295,9 @@ class SimulationEngine:
     def _initialize_workload(self, jobs: Iterable[JobSpec]) -> None:
         validated_specs = validate_workload(jobs, self._total_cores)
         for spec in validated_specs:
-            self._job_states[spec.job_id] = _InternalJobState(spec=spec)
+            self._job_states[spec.job_id] = _InternalJobState(
+                spec=spec, remaining_runtime=spec.runtime
+            )
             self._pending_ids.add(spec.job_id)
             self._schedule_event(
                 timestamp=spec.arrival_time,
@@ -427,10 +447,11 @@ class SimulationEngine:
 
         self._pending_ids.remove(event.job_id)
         job_state.state = JobLifecycleState.WAITING
+        job_state.waiting_since = self._current_time
         self._waiting_ids.add(event.job_id)
 
     def _process_completion(self, event: SimulationEvent) -> None:
-        """Completes a running job and releases its resources (UC-E04, ENG-FR-08)."""
+        """Completes a running job and releases its resources."""
         job_id = event.job_id
         job_state = self._job_states.get(job_id)
         if job_state is None:
@@ -446,18 +467,23 @@ class SimulationEngine:
             raise InvariantViolationError(
                 f"Missing or inconsistent completion event for job {job_id!r}."
             )
+        if job_state.current_start_time is None:
+            raise InvariantViolationError(
+                f"Running job {job_id!r} is missing current_start_time."
+            )
 
-        if job_state.start_time is None:
-            raise InvariantViolationError(f"Running job {job_id!r} is missing start_time.")
-
-        expected_finish = job_state.start_time + job_state.spec.runtime
+        expected_finish = job_state.current_start_time + job_state.remaining_runtime
         if self._current_time != expected_finish:
             raise InvariantViolationError(
                 f"Job {job_id!r} completed at {self._current_time}, "
                 f"expected {expected_finish}."
             )
 
-        # Update lifecycle state
+        segment = ExecutionSegment(job_state.current_start_time, self._current_time)
+        job_state.execution_segments.append(segment)
+        job_state.current_start_time = None
+        job_state.remaining_runtime = 0
+
         del self._active_completion_events[job_id]
         self._running_ids.remove(job_id)
         job_state.state = JobLifecycleState.COMPLETED
@@ -465,13 +491,16 @@ class SimulationEngine:
         job_state.completion_count += 1
         self._completed_ids.add(job_id)
 
-        # Release cores exactly once (ENG-FR-08)
+        # Release cores exactly once.
         cores = job_state.spec.required_cores
         self._allocated_cores -= cores
         self._available_cores += cores
 
-        # Finalize immutable execution record (ENG-FR-09)
-        waiting_time = job_state.start_time - job_state.spec.arrival_time
+        # Finalize one record per job, including every execution interval.
+        if job_state.start_time is None:
+            raise InvariantViolationError(
+                f"Completed job {job_id!r} is missing its first start_time."
+            )
         self._execution_records.append(
             ExecutionRecord(
                 job_id=job_id,
@@ -479,16 +508,20 @@ class SimulationEngine:
                 start_time=job_state.start_time,
                 finish_time=job_state.finish_time,
                 runtime=job_state.spec.runtime,
-                waiting_time=waiting_time,
+                waiting_time=job_state.total_waiting_time,
                 required_cores=cores,
+                execution_segments=tuple(job_state.execution_segments),
+                preemption_count=job_state.preemption_count,
             )
         )
 
-    def _dispatch_jobs(self) -> None:
-        """Invokes the scheduling policy while policy semantics and resources permit starts."""
-        started_in_batch = 0
-        max_possible_starts = len(self._waiting_ids) + 1
 
+    def _dispatch_jobs(self) -> None:
+        """Applies optional preemption, then starts waiting jobs selected by the policy."""
+        self._apply_policy_preemptions()
+
+        started_in_batch = 0
+        max_possible_starts = len(self._waiting_ids)
         while self._waiting_ids:
             if started_in_batch > max_possible_starts:
                 raise SimulationStalledError(
@@ -498,7 +531,6 @@ class SimulationEngine:
 
             context = self._build_scheduler_context()
             self._scheduler_invocations += 1
-
             sched_start = time.perf_counter()
             proposed_job_id = self._policy.select_next_job(context)
             self._scheduler_wall_time_seconds += time.perf_counter() - sched_start
@@ -508,12 +540,11 @@ class SimulationEngine:
 
             self._validate_and_start_job(proposed_job_id)
             started_in_batch += 1
-
-            # Once cluster cores are exhausted, no further jobs can start in this batch
             if self._available_cores == 0:
                 break
 
-        # Stall and non-progress detection (ENG-FR-15, Section 11):
+        # Stall and non-progress detection: a policy cannot leave runnable work
+        # stranded when the cluster is idle and no future event can change state.
         if self._waiting_ids and not self._running_ids:
             runnable_jobs = [
                 jid
@@ -533,7 +564,116 @@ class SimulationEngine:
                         f"at time {self._current_time}, but policy returned None."
                     )
         else:
-            self._consecutive_idle_skips = 0 
+            self._consecutive_idle_skips = 0
+
+    def _apply_policy_preemptions(self) -> None:
+        """Invokes the optional policy hook and atomically applies its preemption proposal."""
+        if not self._waiting_ids:
+            return
+        hook = getattr(self._policy, "select_jobs_to_preempt", None)
+        if not callable(hook):
+            return
+
+        context = self._build_scheduler_context()
+        self._scheduler_invocations += 1
+        sched_start = time.perf_counter()
+        proposed_ids = hook(context)
+        self._scheduler_wall_time_seconds += time.perf_counter() - sched_start
+
+        validated_ids = self.validate_preemption_proposal(proposed_ids)
+        # Validate the entire batch before mutating any job or resource state.
+        for job_id in validated_ids:
+            self._preempt_job(job_id)
+
+    def validate_preemption_proposal(
+        self, proposed_job_ids: Iterable[JobId] | None
+    ) -> tuple[JobId, ...]:
+        """Validates a batch of running-job IDs selected for preemption."""
+        if proposed_job_ids is None:
+            return ()
+        if not isinstance(proposed_job_ids, (tuple, list)):
+            raise InvalidSchedulingDecisionError(
+                "Preemption proposal must be a tuple or list of running job IDs."
+            )
+        job_ids = tuple(proposed_job_ids)
+
+        for job_id in job_ids:
+            if (
+                job_id is None
+                or isinstance(job_id, bool)
+                or not isinstance(job_id, (str, int))
+                or (isinstance(job_id, str) and not job_id.strip())
+                or job_id not in self._job_states
+            ):
+                raise InvalidSchedulingDecisionError(
+                    f"Policy proposed invalid or unknown job_id {job_id!r} for preemption."
+                )
+
+        if len(set(job_ids)) != len(job_ids):
+            raise InvalidSchedulingDecisionError(
+                f"Preemption proposal contains duplicate job IDs: {job_ids!r}."
+            )
+
+        for job_id in job_ids:
+            state = self._job_states[job_id]
+            if state.state != JobLifecycleState.RUNNING or job_id not in self._running_ids:
+                raise InvalidSchedulingDecisionError(
+                    f"Policy can only preempt RUNNING jobs; {job_id!r} is {state.state.value}."
+                )
+            if state.current_start_time is None:
+                raise InvariantViolationError(
+                    f"Running job {job_id!r} is missing current_start_time."
+                )
+            elapsed = self._current_time - state.current_start_time
+            if elapsed <= 0 or elapsed >= state.remaining_runtime:
+                raise InvalidSchedulingDecisionError(
+                    f"Job {job_id!r} cannot be preempted at time {self._current_time}; "
+                    f"elapsed={elapsed}, remaining_runtime={state.remaining_runtime}."
+                )
+            active_event = self._active_completion_events.get(job_id)
+            if active_event is None or active_event not in self._event_queue:
+                raise InvariantViolationError(
+                    f"Running job {job_id!r} has no queued completion event to cancel."
+                )
+        return job_ids
+
+    def _preempt_job(self, job_id: JobId) -> None:
+        """Suspends one running job, preserving its remaining CPU service requirement."""
+        state = self._job_states[job_id]
+        current_start = state.current_start_time
+        if current_start is None:
+            raise InvariantViolationError(
+                f"Cannot preempt job {job_id!r}: current_start_time is missing."
+            )
+        elapsed = self._current_time - current_start
+        if elapsed <= 0 or elapsed >= state.remaining_runtime:
+            raise InvariantViolationError(
+                f"Invalid elapsed runtime {elapsed} while preempting job {job_id!r}."
+            )
+
+        completion_event = self._active_completion_events.pop(job_id)
+        try:
+            self._event_queue.remove(completion_event)
+        except ValueError as exc:
+            raise InvariantViolationError(
+                f"Completion event for preempted job {job_id!r} was not in the event queue."
+            ) from exc
+        heapq.heapify(self._event_queue)
+
+        state.execution_segments.append(ExecutionSegment(current_start, self._current_time))
+        state.remaining_runtime -= elapsed
+        state.current_start_time = None
+        state.waiting_since = self._current_time
+        state.preemption_count += 1
+        state.state = JobLifecycleState.WAITING
+
+        self._running_ids.remove(job_id)
+        self._waiting_ids.add(job_id)
+        if len(self._waiting_ids) > self._peak_waiting_jobs:
+            self._peak_waiting_jobs = len(self._waiting_ids)
+        cores = state.spec.required_cores
+        self._allocated_cores -= cores
+        self._available_cores += cores
 
     def validate_proposal(self, proposed_job_id: JobId) -> JobSpec:
         """Validates a proposed job selection without mutating engine state (UC-E05, ENG-FR-13).
@@ -593,33 +733,45 @@ class SimulationEngine:
         return spec
 
     def _validate_and_start_job(self, proposed_job_id: JobId) -> None:
-        """Validates a proposed job selection and transitions it to RUNNING (UC-E03, UC-E05)."""
+        """Validates a job selection and starts or resumes that job."""
         spec = self.validate_proposal(proposed_job_id)
         job_state = self._job_states[proposed_job_id]
+        if job_state.waiting_since is None:
+            raise InvariantViolationError(
+                f"Waiting job {proposed_job_id!r} is missing waiting_since."
+            )
+        if job_state.remaining_runtime <= 0:
+            raise InvariantViolationError(
+                f"Waiting job {proposed_job_id!r} has no remaining runtime."
+            )
 
-        # Remove any existing reservation for this job once it starts
         if self._reservations:
             self._reservations = [
-                r for r in self._reservations if r.job_id != proposed_job_id
+                reservation for reservation in self._reservations
+                if reservation.job_id != proposed_job_id
             ]
 
-        # Mutate state atomically after all checks pass (UC-E03)
         self._waiting_ids.remove(proposed_job_id)
         job_state.state = JobLifecycleState.RUNNING
-        job_state.start_time = self._current_time
+        if job_state.start_time is None:
+            job_state.start_time = self._current_time
+        job_state.total_waiting_time += self._current_time - job_state.waiting_since
+        job_state.waiting_since = None
+        job_state.current_start_time = self._current_time
         job_state.start_count += 1
         self._running_ids.add(proposed_job_id)
 
         self._available_cores -= spec.required_cores
         self._allocated_cores += spec.required_cores
 
-        completion_time = self._current_time + spec.runtime
+        completion_time = self._current_time + job_state.remaining_runtime
         completion_event = self._schedule_event(
             timestamp=completion_time,
             event_type=EventType.COMPLETION,
             job_id=proposed_job_id,
         )
         self._active_completion_events[proposed_job_id] = completion_event
+
 
     def _build_scheduler_context(self) -> SchedulerContext:
         """Builds an immutable snapshot of current simulation state for policies."""
@@ -631,6 +783,19 @@ class SimulationEngine:
             waiting_jobs=self.waiting_jobs,
             running_jobs=self.running_jobs,
             reservations=self.reservations,
+            waiting_job_views=tuple(
+                WaitingJobView(
+                    job=self._job_states[jid].spec,
+                    remaining_runtime=self._job_states[jid].remaining_runtime,
+                )
+                for jid in sorted(
+                    self._waiting_ids,
+                    key=lambda jid: (
+                        self._job_states[jid].spec.arrival_time,
+                        make_job_sort_key(jid),
+                    ),
+                )
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -638,19 +803,15 @@ class SimulationEngine:
     # ------------------------------------------------------------------
 
     def _assert_invariants(self) -> None:
-        """Verifies all 10 engine invariants defined in Section 7."""
-        # Invariant 1: 0 <= available_cores <= total_cores
+        """Verifies resource, event, lifecycle, and preemption accounting invariants."""
         if not (0 <= self._available_cores <= self._total_cores):
             raise InvariantViolationError(
-                f"Invariant 1 violated: available_cores={self._available_cores}, "
-                f"total_cores={self._total_cores}."
+                f"available_cores={self._available_cores} is outside cluster capacity."
             )
-
-        # Invariant 2: available_cores + allocated_cores == total_cores
         if self._available_cores + self._allocated_cores != self._total_cores:
             raise InvariantViolationError(
-                f"Invariant 2 violated: available ({self._available_cores}) + "
-                f"allocated ({self._allocated_cores}) != total ({self._total_cores})."
+                f"available ({self._available_cores}) + allocated ({self._allocated_cores}) "
+                f"!= total ({self._total_cores})."
             )
 
         running_cores_sum = sum(
@@ -658,82 +819,146 @@ class SimulationEngine:
         )
         if self._allocated_cores != running_cores_sum:
             raise InvariantViolationError(
-                f"Allocated cores ({self._allocated_cores}) != sum of running job cores "
+                f"Allocated cores ({self._allocated_cores}) != running-job core sum "
                 f"({running_cores_sum})."
             )
 
-        # Invariant 3: Every running job has exactly one active completion event
-        if set(self._active_completion_events.keys()) != self._running_ids:
+        if set(self._active_completion_events) != self._running_ids:
             raise InvariantViolationError(
-                "Invariant 3 violated: mismatch between running_ids and active_completion_events."
+                "Mismatch between running jobs and active completion events."
             )
-
-        # Verify active completion events actually exist in the event queue
         queued_completion_events = {
-            ev.job_id: ev
-            for ev in self._event_queue
-            if ev.event_type == EventType.COMPLETION
+            event.job_id: event
+            for event in self._event_queue
+            if event.event_type == EventType.COMPLETION
         }
         if queued_completion_events != self._active_completion_events:
             raise InvariantViolationError(
-                "Invariant 3 violated: active completion events do not match queued completion events."
+                "Active completion events do not match queued completion events."
             )
 
-        # Invariant 9: A job cannot appear in multiple lifecycle states simultaneously
-        total_partition_count = (
-            len(self._pending_ids)
-            + len(self._waiting_ids)
-            + len(self._running_ids)
-            + len(self._completed_ids)
-        )
-        if total_partition_count != len(self._job_states):
-            raise InvariantViolationError(
-                "Invariant 9 violated: lifecycle sets do not form a strict partition of jobs."
-            )
-        if (
-            (self._pending_ids & self._waiting_ids)
-            or (self._pending_ids & self._running_ids)
-            or (self._pending_ids & self._completed_ids)
-            or (self._waiting_ids & self._running_ids)
-            or (self._waiting_ids & self._completed_ids)
-            or (self._running_ids & self._completed_ids)
-        ):
-            raise InvariantViolationError(
-                "Invariant 9 violated: a job appears in multiple lifecycle sets simultaneously."
-            )
+        partitions = (self._pending_ids, self._waiting_ids, self._running_ids, self._completed_ids)
+        if sum(len(partition) for partition in partitions) != len(self._job_states):
+            raise InvariantViolationError("Lifecycle sets do not partition all known jobs.")
+        for index, partition in enumerate(partitions):
+            for other in partitions[index + 1:]:
+                if partition & other:
+                    raise InvariantViolationError(
+                        "A job appears in multiple lifecycle sets simultaneously."
+                    )
 
-        # Per-job lifecycle invariants (Invariants 4, 5, 6, 7, 8)
-        for jid, jstate in self._job_states.items():
-            spec = jstate.spec
-            # Invariant 8
+        for job_id, state in self._job_states.items():
+            spec = state.spec
             if not (0 < spec.required_cores <= self._total_cores):
                 raise InvariantViolationError(
-                    f"Invariant 8 violated for job {jid!r}: required_cores={spec.required_cores}."
+                    f"Job {job_id!r} has invalid required_cores={spec.required_cores}."
                 )
-            # Invariant 4
-            if jstate.start_count > 1:
+            if state.completion_count > 1:
                 raise InvariantViolationError(
-                    f"Invariant 4 violated for job {jid!r}: started {jstate.start_count} times."
+                    f"Job {job_id!r} completed {state.completion_count} times."
                 )
-            # Invariant 5
-            if jstate.completion_count > 1:
+            if state.start_count < 0 or state.preemption_count < 0:
+                raise InvariantViolationError(f"Job {job_id!r} has a negative lifecycle counter.")
+            if state.start_count == 0:
+                if state.start_time is not None or state.preemption_count != 0:
+                    raise InvariantViolationError(
+                        f"Never-started job {job_id!r} has inconsistent start/preemption state."
+                    )
+            else:
+                expected_starts = state.preemption_count + (
+                    1 if state.state in (JobLifecycleState.RUNNING, JobLifecycleState.COMPLETED) else 0
+                )
+                if state.start_count != expected_starts:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r}: start_count ({state.start_count}) must be "
+                        f"{expected_starts} for state {state.state.value}."
+                    )
+            if state.start_time is not None and state.start_time < spec.arrival_time:
                 raise InvariantViolationError(
-                    f"Invariant 5 violated for job {jid!r}: completed {jstate.completion_count} times."
+                    f"Job {job_id!r} started before its arrival."
                 )
-            # Invariant 6
-            if jstate.start_time is not None and jstate.start_time < spec.arrival_time:
+
+            segment_duration = 0
+            previous_finish: int | None = None
+            for segment in state.execution_segments:
+                if segment.finish_time <= segment.start_time:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r} has a non-positive execution segment."
+                    )
+                if previous_finish is not None and segment.start_time < previous_finish:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r} has overlapping or unordered execution segments."
+                    )
+                previous_finish = segment.finish_time
+                segment_duration += segment.duration
+
+            expected_segments = state.preemption_count + (
+                1 if state.state == JobLifecycleState.COMPLETED else 0
+            )
+            if len(state.execution_segments) != expected_segments:
                 raise InvariantViolationError(
-                    f"Invariant 6 violated for job {jid!r}: start_time ({jstate.start_time}) < "
-                    f"arrival_time ({spec.arrival_time})."
+                    f"Job {job_id!r} has {len(state.execution_segments)} execution segments; "
+                    f"expected {expected_segments}."
                 )
-            # Invariant 7
-            if jstate.state == JobLifecycleState.COMPLETED:
+
+            if state.state == JobLifecycleState.PENDING_ARRIVAL:
                 if (
-                    jstate.start_time is None
-                    or jstate.finish_time is None
-                    or jstate.finish_time != jstate.start_time + spec.runtime
+                    state.waiting_since is not None
+                    or state.current_start_time is not None
+                    or state.remaining_runtime != spec.runtime
+                    or state.start_count != 0
                 ):
                     raise InvariantViolationError(
-                        f"Invariant 7 violated for job {jid!r}: finish_time ({jstate.finish_time}) "
-                        f"!= start_time ({jstate.start_time}) + runtime ({spec.runtime})."
+                        f"Pending job {job_id!r} has inconsistent runtime or start state."
+                    )
+            elif state.state == JobLifecycleState.WAITING:
+                if (
+                    state.waiting_since is None
+                    or state.current_start_time is not None
+                    or state.remaining_runtime <= 0
+                ):
+                    raise InvariantViolationError(
+                        f"Waiting job {job_id!r} has inconsistent preemption state."
+                    )
+                if segment_duration != spec.runtime - state.remaining_runtime:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r} service accounting is inconsistent while waiting."
+                    )
+            elif state.state == JobLifecycleState.RUNNING:
+                if (
+                    state.waiting_since is not None
+                    or state.current_start_time is None
+                    or state.remaining_runtime <= 0
+                ):
+                    raise InvariantViolationError(
+                        f"Running job {job_id!r} has inconsistent execution state."
+                    )
+                elapsed = self._current_time - state.current_start_time
+                if elapsed < 0 or elapsed >= state.remaining_runtime:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r} has invalid elapsed runtime while running."
+                    )
+                if segment_duration != spec.runtime - state.remaining_runtime:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r} service accounting is inconsistent while running."
+                    )
+                active = self._active_completion_events.get(job_id)
+                if active is None or active.timestamp != state.current_start_time + state.remaining_runtime:
+                    raise InvariantViolationError(
+                        f"Job {job_id!r} has an incorrect expected completion timestamp."
+                    )
+            elif state.state == JobLifecycleState.COMPLETED:
+                if (
+                    state.finish_time is None
+                    or state.current_start_time is not None
+                    or state.waiting_since is not None
+                    or state.remaining_runtime != 0
+                    or state.start_time is None
+                    or state.completion_count != 1
+                    or segment_duration != spec.runtime
+                    or state.finish_time - spec.arrival_time
+                    != state.total_waiting_time + spec.runtime
+                ):
+                    raise InvariantViolationError(
+                        f"Completed job {job_id!r} has inconsistent completion/runtime accounting."
                     )
