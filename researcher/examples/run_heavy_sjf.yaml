@@ -1,6 +1,0 @@
-# One run: SJF on the heavy synthetic workload, 16 CPU cores.
-workload: synth:heavy:n=300:seed=7
-strategy: sjf
-cluster_cores: 16
-strategy_params: {}
-output_dir: results/
