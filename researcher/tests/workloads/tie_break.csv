@@ -1,0 +1,6 @@
+# cluster_cores: 1 (set in tests/test_fake_engine.py)
+# equal runtimes; rows deliberately out of job_id order; job 2 has a lower id but arrives later than job 3
+job_id,arrival_time,runtime,required_cores
+3,0,4,1
+1,0,4,1
+2,1,4,1

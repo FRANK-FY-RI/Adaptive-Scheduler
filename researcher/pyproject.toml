@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adaptivesched"
+version = "0.1.0"
+description = "AdaptiveSched researcher part: compare scheduling strategies on one simulated cluster"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy", "pandas", "matplotlib", "pyyaml",
+    # team engine (FRANK) + policies (MAGNATAR, branch feature/scheduling-policies), pinned: bump the commit deliberately and rerun tests/test_fake_engine.py
+    "adaptive-scheduler @ git+https://github.com/FRANK-FY-RI/Adaptive-Scheduler@33a6d3a6a1f09bac0ce2fdac29709b3eb00b5a42",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+adaptivesched = "adaptivesched.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["adaptivesched*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
