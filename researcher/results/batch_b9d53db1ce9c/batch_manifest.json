@@ -1,0 +1,53 @@
+{
+  "run_set_id": "b9d53db1ce9c",
+  "config": {
+    "cluster_cores": 16,
+    "workloads": [
+      "synth:light:n=300:seed=7",
+      "synth:heavy:n=300:seed=7",
+      "synth:short_heavy:n=300:seed=7",
+      "synth:mixed:n=300:seed=7",
+      "synth:wide_jobs:n=300:seed=7"
+    ],
+    "strategies": [
+      "fifo",
+      "sjf"
+    ],
+    "strategy_params": {},
+    "seeds": [
+      7,
+      11,
+      13
+    ]
+  },
+  "workloads": [
+    "synth:light:n=300:seed=7",
+    "synth:light:n=300:seed=11",
+    "synth:light:n=300:seed=13",
+    "synth:heavy:n=300:seed=7",
+    "synth:heavy:n=300:seed=11",
+    "synth:heavy:n=300:seed=13",
+    "synth:short_heavy:n=300:seed=7",
+    "synth:short_heavy:n=300:seed=11",
+    "synth:short_heavy:n=300:seed=13",
+    "synth:mixed:n=300:seed=7",
+    "synth:mixed:n=300:seed=11",
+    "synth:mixed:n=300:seed=13",
+    "synth:wide_jobs:n=300:seed=7",
+    "synth:wide_jobs:n=300:seed=11",
+    "synth:wide_jobs:n=300:seed=13"
+  ],
+  "strategies": [
+    "fifo",
+    "sjf"
+  ],
+  "engine": "fake",
+  "engine_versions": [
+    "fake-0.1"
+  ],
+  "package_version": "0.1.0",
+  "runs_attempted": 30,
+  "runs_ok": 30,
+  "runs_failed": 0,
+  "timestamp": "2026-11-01T06:53:37+00:00"
+}

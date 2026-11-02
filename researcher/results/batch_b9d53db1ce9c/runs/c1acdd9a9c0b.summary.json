@@ -1,0 +1,37 @@
+{
+  "strategy": "fifo",
+  "workload": "synth:light:n=300:seed=13",
+  "cluster_cores": 16,
+  "total_jobs": 300,
+  "average_waiting_time": 3.91,
+  "max_waiting_time": 79,
+  "cpu_utilization": 49.20328343795268,
+  "makespan": 6213,
+  "bounded_slowdown": 1.085734315779797,
+  "tau": 10,
+  "average_turnaround_time": 73.61666666666666,
+  "utilization_interval": "first arrival to last completion (makespan)",
+  "metadata": {
+    "run_id": "c1acdd9a9c0b",
+    "workload_id": "synth:light:n=300:seed=13",
+    "workload_params": {
+      "source": "synthetic",
+      "generator": "light",
+      "seed": 13,
+      "n_jobs": 300,
+      "cluster_cores": 16,
+      "offered_load": 0.5,
+      "mean_interarrival": 20.38,
+      "runtime_estimate_error": 0.0
+    },
+    "strategy": "fifo",
+    "strategy_params": {},
+    "strategy_dispatch_note": "fake engine FIFO: queue ordered by (arrival_time, job_id); wait-behind-head (if the head job does not fit the free CPU cores, no later job starts)",
+    "cluster_cores": 16,
+    "engine": "fake",
+    "engine_version": "fake-0.1",
+    "package_version": "0.1.0",
+    "config_hash": "18270adefdf8",
+    "timestamp": "2026-11-01T06:53:37+00:00"
+  }
+}
