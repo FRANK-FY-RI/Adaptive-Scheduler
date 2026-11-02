@@ -1,0 +1,21 @@
+# Researcher strategies (examples/researcher_strategies.py) next to the team's four, on the same
+# five workload conditions x three seeds x 16 CPU cores as batch_study.yaml. Only the strategy changes.
+cluster_cores: 16
+workloads:
+  - synth:light:n=300:seed=7
+  - synth:heavy:n=300:seed=7
+  - synth:short_heavy:n=300:seed=7
+  - synth:mixed:n=300:seed=7
+  - synth:wide_jobs:n=300:seed=7
+strategies: [fifo, sjf, adaptive, easy_backfill, sjf_first_fit, sjf_aging_0.5, sjf_aging, sjf_aging_2, smallest_area, best_fit]
+strategy_params:
+  adaptive: {base_wait_weight: 0.1}
+strategy_files:
+  sjf_first_fit: ../../examples/researcher_strategies.py:SJFFirstFitStrategy
+  sjf_aging_0.5: ../../examples/researcher_strategies.py:SJFAgingHalfStrategy
+  sjf_aging: ../../examples/researcher_strategies.py:SJFAgingStrategy
+  sjf_aging_2: ../../examples/researcher_strategies.py:SJFAgingDoubleStrategy
+  smallest_area: ../../examples/researcher_strategies.py:SmallestAreaFirstStrategy
+  best_fit: ../../examples/researcher_strategies.py:BestFitStrategy
+repeats: {seeds: [7, 11, 13]}
+output_dir: results/

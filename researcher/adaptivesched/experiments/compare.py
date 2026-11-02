@@ -11,8 +11,9 @@ from pathlib import Path
 from adaptivesched.experiments.batch import read_batch_summary
 from adaptivesched.experiments.export import read_json
 
-METRICS = ["average_waiting_time", "max_waiting_time", "cpu_utilization", "makespan",
-           "bounded_slowdown", "average_turnaround_time"]
+METRICS = ["average_waiting_time", "max_waiting_time", "average_turnaround_time", "cpu_utilization",
+           "makespan", "bounded_slowdown", "throughput", "fairness_index", "completed_jobs",
+           "total_preemptions"]
 COLUMNS = ["workload_id", "cluster_cores", "strategy", "status", *METRICS, "run_id", "error"]
 
 
@@ -25,7 +26,7 @@ def load_rows(batch_dir) -> list[dict]:
         row["cluster_cores"] = int(r["cluster_cores"])
         if r["status"] == "ok":
             s = read_json(batch_dir / "runs" / f"{r['run_id']}.summary.json")
-            row.update({m: s[m] for m in METRICS})
+            row.update({m: s.get(m) for m in METRICS})  # summaries from before a metric existed: blank
             row["engine"] = s["metadata"]["engine"]
         rows.append(row)
     return rows

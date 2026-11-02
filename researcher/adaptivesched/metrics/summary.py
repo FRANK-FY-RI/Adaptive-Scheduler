@@ -28,8 +28,13 @@ def run_id(workload_id: str, strategy: str, strategy_params: Mapping, cluster_co
 
 
 def build_summary(result: RunResult, workload_params: Mapping[str, Any],
-                  strategy_params: Mapping[str, Any], config_hash: str) -> dict:
+                  strategy_params: Mapping[str, Any], config_hash: str, base_strategy: str = "") -> dict:
+    """base_strategy: the registered strategy a labelled variant runs (e.g. 'amf_preemptive' runs
+    'adaptive_multifactor'); recorded only for variants so other summaries stay unchanged."""
     r = result.records
+    meta_strategy = {"strategy": result.strategy}
+    if base_strategy:
+        meta_strategy["base_strategy"] = base_strategy
     return {
         "strategy": result.strategy,
         "workload": result.workload_id,
@@ -42,18 +47,27 @@ def build_summary(result: RunResult, workload_params: Mapping[str, Any],
         "bounded_slowdown": m.bounded_slowdown(r),
         "tau": m.TAU,
         "average_turnaround_time": m.average_turnaround_time(r),
+        "completed_jobs": m.completed_jobs(r),
+        "throughput": m.throughput(r),
+        "fairness_index": m.fairness_index(r),
+        "total_preemptions": m.total_preemptions(r),
+        "preemptive": result.preemptive,
         "utilization_interval": "first arrival to last completion (makespan)",
+        "waiting_time_definition": "finish_time - arrival_time - runtime (all waiting intervals; "
+                                   "= start_time - arrival_time for a job never preempted)",
+        "fairness_definition": "Jain's index over per-job bounded slowdowns (tau as above)",
         "metadata": {
             "run_id": run_id(result.workload_id, result.strategy, strategy_params,
                              result.cluster_cores, result.engine),
             "workload_id": result.workload_id,
             "workload_params": dict(workload_params),
-            "strategy": result.strategy,
+            **meta_strategy,
             "strategy_params": dict(strategy_params),
             "strategy_dispatch_note": result.strategy_dispatch_note,
             "cluster_cores": result.cluster_cores,
             "engine": result.engine,
             "engine_version": result.engine_version,
+            "engine_invariant_checks": result.engine_invariant_checks,
             "package_version": package_version(),
             "config_hash": config_hash,
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),

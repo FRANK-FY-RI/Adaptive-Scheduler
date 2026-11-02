@@ -9,6 +9,7 @@ import pkgutil
 from typing import Any
 
 from .adaptive import AdaptivePolicy
+from .adaptive_multifactor import AdaptiveMultifactorPolicy
 from .easy_backfill import EASYBackfillPolicy
 from .fifo import FIFOPolicy
 from .registry import _CUSTOM_REGISTRY, register_policy
@@ -59,13 +60,25 @@ def get_policy(name: str, **kwargs: Any) -> Any:
     return policy_cls(**kwargs)
 
 
+def policy_ids() -> list[str]:
+    """One stable identifier per policy (SCH-FR-10): a built-in's module name, or the name a
+    custom policy was registered under. discover_policies() also holds class-name aliases."""
+    return sorted(
+        key for key, cls in discover_policies().items()
+        if not cls.__module__.startswith(__name__ + ".")
+        or cls.__module__.rsplit(".", 1)[-1] == key
+    )
+
+
 __all__ = [
+    "AdaptiveMultifactorPolicy",
     "AdaptivePolicy",
     "EASYBackfillPolicy",
     "FIFOPolicy",
     "SJFPolicy",
     "discover_policies",
     "get_policy",
+    "policy_ids",
     "register_policy",
 ]
 

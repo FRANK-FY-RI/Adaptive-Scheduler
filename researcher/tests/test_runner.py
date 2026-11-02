@@ -54,7 +54,7 @@ class LyingEngine(FakeEngineAdapter):
         res = super().run(*a, **k)
         recs = list(res.records)
         # job 2 (3 cores, arrival 1) moved to [5,10) while job 1 holds 2 cores on [0,10): 5 in use
-        recs[1] = replace(recs[1], start_time=5, finish_time=10, waiting_time=4)
+        recs[1] = replace(recs[1], start_time=5, finish_time=10, waiting_time=4, execution_segments=((5, 10),))
         return replace(res, records=tuple(recs))
 
 

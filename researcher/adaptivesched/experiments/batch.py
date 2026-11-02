@@ -14,17 +14,31 @@ from adaptivesched.metrics.summary import package_version, run_id, sha12
 BATCH_FIELDS = ["run_id", "status", "strategy", "workload_id", "cluster_cores", "error"]
 
 
-def run_batch(cfg: BatchConfig, adapter, engine: str) -> Path:
-    """Runs serially. ponytail: one process; a 300-job run takes well under a second on the fake
-    engine — add multiprocessing.Pool over cfg.runs() if the team engine makes the study slow."""
+def _resolved(cfg: BatchConfig) -> dict:
     resolved = asdict(cfg)
     resolved.pop("output_dir")
-    run_set_id = sha12([resolved, engine])
-    out = Path(cfg.output_dir) / f"batch_{run_set_id}"
+    if not resolved["variants"]:
+        resolved.pop("variants")  # keeps run-set ids of batches without variants unchanged
+    return resolved
+
+
+def batch_dir(cfg: BatchConfig, engine: str) -> Path:
+    """Where run_batch writes: <output_dir>/batch_<sha12 of (config without output_dir, engine)>."""
+    return Path(cfg.output_dir) / f"batch_{sha12([_resolved(cfg), engine])}"
+
+
+def run_batch(cfg: BatchConfig, adapter, engine: str, on_progress=None) -> Path:
+    """Runs serially; on_progress(done, total), if given, is called after every run.
+    ponytail: one process; a 300-job run takes well under a second — add multiprocessing.Pool
+    over cfg.runs() if larger workloads make studies slow."""
+    resolved = _resolved(cfg)
+    out = batch_dir(cfg, engine)
+    run_set_id = out.name.removeprefix("batch_")
     (out / "runs").mkdir(parents=True, exist_ok=True)
 
     rows, engine_versions = [], []
-    for rc in cfg.runs():
+    runs = cfg.runs()
+    for i, rc in enumerate(runs, 1):
         o = run_one(rc, adapter)
         if o.status == "ok":
             write_run(o, out / "runs")
@@ -35,6 +49,8 @@ def run_batch(cfg: BatchConfig, adapter, engine: str) -> Path:
         rows.append({"run_id": rid, "status": o.status, "strategy": rc.strategy,
                      "workload_id": o.workload_id, "cluster_cores": rc.cluster_cores,
                      "error": o.error or ""})
+        if on_progress:
+            on_progress(i, len(runs))
 
     with open(out / "batch_summary.csv", "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, BATCH_FIELDS, lineterminator="\n")

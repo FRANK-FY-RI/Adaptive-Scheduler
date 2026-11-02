@@ -68,8 +68,9 @@ def test_inspect(batch_dir, tmp_path, capsys):
 
     bad = tmp_path / "x.records.csv"
     bad.write_text("job_id,arrival_time,start_time,finish_time,runtime,waiting_time,required_cores\n1,0,4,9,3,4,1\n")
-    text, ok = inspect_job(tmp_path / "x", 1)
-    assert not ok and "[FAILED] finish_time == start_time + runtime" in text
+    text, ok = inspect_job(tmp_path / "x", 1)  # a pre-preemption file: one segment [4, 9) of length 5
+    assert not ok and "[FAILED] execution segments sum to runtime" in text
+    assert "[FAILED] waiting_time == finish_time - arrival_time - runtime" in text
 
 
 def test_cli_plot(batch_dir, capsys):
@@ -109,6 +110,9 @@ def test_findings_rank_within_seed(batch_dir):
     So on avg wait sjf leads and fifo trails; on max wait both are 9 -> tie, nobody leads;
     makespan 15 for both -> tie. Slowdown (tau 10), runtimes 10,5,2,2:
     fifo (10/10, 14/10, 10/10, 11/10) -> mean 1.125; sjf (1, 1.4, max(1, 2/10), 1) -> 1.1: sjf leads.
+    Fairness (Jain over those slowdowns, higher is better):
+    fifo (4.5)^2 / (4 * (1 + 1.96 + 1 + 1.21)) = 20.25 / 20.68 = .97921;
+    sjf (4.4)^2 / (4 * (1 + 1.96 + 1 + 1)) = 19.36 / 19.84 = .97581 -> fifo leads, sjf trails.
     One workload id (CSV, no seeds) -> counts are k/1."""
     from adaptivesched.analysis.findings import seed_results, tradeoff_table
 
@@ -117,5 +121,6 @@ def test_findings_rank_within_seed(batch_dir):
     assert hol[0]["average_waiting_time"] == ({"sjf"}, {"fifo"})
     assert hol[0]["max_waiting_time"] == (set(), set())
     assert hol[0]["makespan"] == (set(), set())
+    assert hol[0]["fairness_index"] == ({"fifo"}, {"sjf"})
     table = tradeoff_table(batch_dir)
-    assert "| sjf | led: avg wait 1/1, slowdown 1/1<br>trailed: -" in table
+    assert "| sjf | led: avg wait 1/1, slowdown 1/1<br>trailed: fairness 1/1" in table

@@ -9,8 +9,9 @@ description = "AdaptiveSched researcher part: compare scheduling strategies on o
 requires-python = ">=3.10"
 dependencies = [
     "numpy", "pandas", "matplotlib", "pyyaml",
-    # team engine (FRANK) + policies (MAGNATAR, branch feature/scheduling-policies), pinned: bump the commit deliberately and rerun tests/test_fake_engine.py
-    "adaptive-scheduler @ git+https://github.com/FRANK-FY-RI/Adaptive-Scheduler@33a6d3a6a1f09bac0ce2fdac29709b3eb00b5a42",
+    # the engine + policies package one directory up (this repo's root): `pip install -e .` there first.
+    # Summaries record its exact commit (and "+dirty" for uncommitted engine edits) as engine_version.
+    "adaptive-scheduler",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,9 @@ adaptivesched = "adaptivesched.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["adaptivesched*"]
+
+[tool.setuptools.package-data]
+adaptivesched = ["web/*.html", "web/*.js", "web/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

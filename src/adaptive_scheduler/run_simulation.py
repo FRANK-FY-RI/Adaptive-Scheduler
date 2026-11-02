@@ -10,13 +10,19 @@ from adaptive_scheduler.policy_loader import load_policy_from_file
 from adaptive_scheduler.workload import load_workload_from_csv
 
 
-_BUILTIN_POLICY_NAMES = ("fifo", "fifo-fit", "sjf", "sjf-fit", "srtf")
+_BUILTIN_POLICY_NAMES = (
+    "fifo", "fifo-fit", "sjf", "sjf-fit", "srtf", "easy-backfill", "adaptive",
+    "adaptive-multifactor", "adaptive-multifactor-preemptive",
+)
 
 
 def _create_builtin_policy(policy_name: str):
     """Instantiate a built-in policy only when the user selects one."""
     # Keep built-in policy imports out of the custom-policy code path.
-    from adaptive_scheduler.policies import FIFOPolicy, SJFPolicy, SRTFPolicy
+    from adaptive_scheduler.policies import (
+        AdaptiveMultifactorPolicy, AdaptivePolicy, EASYBackfillPolicy, FIFOPolicy, SJFPolicy,
+        SRTFPolicy,
+    )
 
     factories = {
         "fifo": lambda: FIFOPolicy(strict_head_of_line=True),
@@ -24,6 +30,10 @@ def _create_builtin_policy(policy_name: str):
         "sjf": lambda: SJFPolicy(strict_head_of_line=True),
         "sjf-fit": lambda: SJFPolicy(strict_head_of_line=False),
         "srtf": SRTFPolicy,
+        "easy-backfill": EASYBackfillPolicy,
+        "adaptive": AdaptivePolicy,
+        "adaptive-multifactor": AdaptiveMultifactorPolicy,
+        "adaptive-multifactor-preemptive": lambda: AdaptiveMultifactorPolicy(preemptive=True),
     }
     return factories[policy_name]()
 

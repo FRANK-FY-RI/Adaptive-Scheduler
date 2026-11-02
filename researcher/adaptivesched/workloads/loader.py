@@ -1,5 +1,6 @@
 """CSV workloads (SPEC §1.1): header `job_id,arrival_time,runtime,required_cores`, integers,
-`#` comment lines and blank lines ignored."""
+`#` comment lines and blank lines ignored. job_id may also be a non-empty string ("J1", as in the
+team's workloads/); an id that is an integer is read as one."""
 from __future__ import annotations
 
 import hashlib
@@ -7,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from adaptivesched.experiments.adapter import JobSpec
+from adaptivesched.experiments.adapter import JobSpec, job_key, parse_job_id
 from adaptivesched.workloads.validate import ValidationError, validate_jobs
 
 HEADER = ("job_id", "arrival_time", "runtime", "required_cores")
@@ -28,7 +29,7 @@ def to_csv_text(jobs: Iterable[JobSpec], comments: Iterable[str] = ()) -> str:
 
 def content_hash(jobs: Iterable[JobSpec]) -> str:
     """sha256[:12] of the jobs in job_id order: ignores comments, whitespace and row order."""
-    canonical = to_csv_text(sorted(jobs, key=lambda j: j.job_id))
+    canonical = to_csv_text(sorted(jobs, key=lambda j: job_key(j.job_id)))
     return hashlib.sha256(canonical.encode()).hexdigest()[:12]
 
 
@@ -54,8 +55,10 @@ def load_csv(path: str | Path, cluster_cores: int | None = None) -> Workload:
         if len(fields) != len(HEADER):
             raise ValidationError(f"{at}: expected {len(HEADER)} columns ({','.join(HEADER)}), "
                                   f"got {len(fields)}")
-        values = []
-        for name, f in zip(HEADER, fields):
+        if not fields[0]:
+            raise ValidationError(f"{at}, field job_id: must not be empty")
+        values = [parse_job_id(fields[0])]
+        for name, f in zip(HEADER[1:], fields[1:]):
             try:
                 values.append(int(f))
             except ValueError:

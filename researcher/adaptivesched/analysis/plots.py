@@ -65,26 +65,40 @@ def metric_grid(batch_dir, metric, out_stem):
 
 
 def tradeoff_scatter(batch_dir, out_stem, x="average_waiting_time", y="max_waiting_time"):
-    """One point per (strategy, workload): colour = strategy, marker = workload condition."""
+    """Small multiples, one panel per workload condition; one point per (strategy, seed):
+    colour = strategy, marker = seed. Each strategy is direct-labelled once per panel, so
+    identity does not rest on colour when more than three strategies share a panel."""
     rows = _ok(load_rows(batch_dir))
     conditions = list(dict.fromkeys(split_seed(r["workload_id"])[0] for r in rows))
+    seeds = list(dict.fromkeys(split_seed(r["workload_id"])[1] for r in rows))
     strategies = list(dict.fromkeys(r["strategy"] for r in rows))
     cores = sorted({r["cluster_cores"] for r in rows})
-    fig, ax = plt.subplots(figsize=(6.5, 4.5))
-    for r in rows:
-        m = CONDITION_MARKERS[conditions.index(split_seed(r["workload_id"])[0]) % len(CONDITION_MARKERS)]
-        ax.scatter(r[x], r[y], s=40, marker=m, color=color(r["strategy"]), edgecolor="white", linewidth=1)
-    ax.set_xscale("symlog", linthresh=1)
-    ax.set_yscale("symlog", linthresh=1)
-    ax.set_xlabel(f"{x} (log scale)")
-    ax.set_ylabel(f"{y} (log scale)")
-    ax.set_title(f"{y} vs {x}, one point per strategy and workload - {', '.join(map(str, cores))} CPU cores")
+    cols = min(3, len(conditions))
+    nrows = -(-len(conditions) // cols)
+    fig, axes = plt.subplots(nrows, cols, squeeze=False, figsize=(4.2 * cols + 1.6, 3.4 * nrows))
+    for i, cond in enumerate(conditions):
+        ax = axes[i // cols][i % cols]
+        labelled = set()
+        for r in (r for r in rows if split_seed(r["workload_id"])[0] == cond):
+            m = CONDITION_MARKERS[seeds.index(split_seed(r["workload_id"])[1]) % len(CONDITION_MARKERS)]
+            ax.scatter(r[x], r[y], s=40, marker=m, color=color(r["strategy"]), edgecolor="white", linewidth=1)
+            if r["strategy"] not in labelled:
+                labelled.add(r["strategy"])
+                ax.annotate(r["strategy"], (r[x], r[y]), xytext=(4, 3), textcoords="offset points",
+                            fontsize=6.5, color=TEXT_2)
+        ax.set_xscale("symlog", linthresh=1)
+        ax.set_yscale("symlog", linthresh=1)
+        ax.set_title(cond.removeprefix("synth:"))
+        ax.set_xlabel(f"{x} (log scale)")
+        ax.set_ylabel(f"{y} (log scale)")
+    for ax in axes.flat[len(conditions):]:
+        ax.set_visible(False)
+    fig.suptitle(f"{y} vs {x} by workload condition - {', '.join(map(str, cores))} CPU cores", color=TEXT_2)
     s_handles = [plt.Line2D([], [], ls="", marker="o", color=color(s), label=s) for s in strategies]
-    c_handles = [plt.Line2D([], [], ls="", marker=CONDITION_MARKERS[i % len(CONDITION_MARKERS)],
-                            color=TEXT_2, label=c.removeprefix("synth:")) for i, c in enumerate(conditions)]
-    leg = ax.legend(handles=s_handles, title="strategy", loc="upper left", bbox_to_anchor=(1.01, 1))
-    ax.add_artist(leg)
-    ax.legend(handles=c_handles, title="workload", loc="upper left", bbox_to_anchor=(1.01, 0.6))
+    m_handles = [plt.Line2D([], [], ls="", marker=CONDITION_MARKERS[i % len(CONDITION_MARKERS)],
+                            color=TEXT_2, label=f"seed {s}" if s is not None else "csv") for i, s in enumerate(seeds)]
+    fig.legend(handles=s_handles + m_handles, loc="upper left", bbox_to_anchor=(1.0, 0.95))
+    fig.tight_layout()
     return save(fig, out_stem)
 
 
@@ -97,6 +111,10 @@ def waiting_time_cdf(batch_dir, workload_id, out_stem):
         waits = np.sort([rec.waiting_time for rec in read_records(batch_dir / "runs" / f"{r['run_id']}.records.csv")])
         frac = np.arange(1, len(waits) + 1) / len(waits)
         ax.step(waits, frac, where="post", color=color(r["strategy"]), linewidth=2, label=r["strategy"])
+        # direct label where the curve reaches 90%: identity is not colour alone past 3 series
+        k = min(int(np.searchsorted(frac, 0.9)), len(waits) - 1)
+        ax.annotate(r["strategy"], (waits[k], frac[k]), xytext=(4, -2), textcoords="offset points",
+                    fontsize=7, color=TEXT_2)
     ax.set_ylim(0, 1.02)
     ax.set_xlim(left=0)
     ax.set_xlabel("waiting time")

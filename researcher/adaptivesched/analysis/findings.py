@@ -10,29 +10,33 @@ from pathlib import Path
 from adaptivesched.analysis.style import split_seed
 from adaptivesched.experiments.compare import group, load_rows
 
-# Lower is better for all four. cpu_utilization and average_turnaround_time are left out:
-# in this model they rank exactly like makespan and average_waiting_time (same jobs, same
-# runtimes), so counting them would count the same result twice.
-RANKED = ["average_waiting_time", "max_waiting_time", "makespan", "bounded_slowdown"]
+# "led" = best value: lowest, except fairness_index where 1 is best. cpu_utilization,
+# throughput and average_turnaround_time are left out: on one workload they rank exactly like
+# makespan and average_waiting_time (same jobs, same runtimes), so counting them would count
+# the same result twice.
+RANKED = ["average_waiting_time", "max_waiting_time", "makespan", "bounded_slowdown", "fairness_index"]
+HIGHER_IS_BETTER = {"fairness_index"}
 SHORT = {"average_waiting_time": "avg wait", "max_waiting_time": "max wait",
-         "makespan": "makespan", "bounded_slowdown": "slowdown"}
+         "makespan": "makespan", "bounded_slowdown": "slowdown", "fairness_index": "fairness"}
 
 
 def seed_results(batch_dir) -> dict:
     """{(condition, cores): [one dict per seed: {"workload_id", "rows", metric: (best, worst)}]}.
 
-    best/worst are the sets of strategies with the lowest/highest value; both are empty
-    when every strategy has the same value (a tie is not a lead). Failed runs are not ranked.
+    best/worst are the sets of strategies with the best/worst value; both are empty when every
+    strategy has the same value (a tie is not a lead). Failed runs and metrics a summary does
+    not have (older batches) are not ranked.
     """
     out: dict = {}
     for (wid, cores), rows in group(load_rows(batch_dir)).items():
         ok = [r for r in rows if r["status"] == "ok"]
         seed = {"workload_id": wid, "rows": rows}
         for m in RANKED:
-            vals = {r["strategy"]: r[m] for r in ok}
-            lo, hi = min(vals.values()), max(vals.values())
-            seed[m] = (set(), set()) if lo == hi else \
-                ({s for s, v in vals.items() if v == lo}, {s for s, v in vals.items() if v == hi})
+            vals = {r["strategy"]: r[m] for r in ok if r.get(m) is not None}
+            lo, hi = (min(vals.values()), max(vals.values())) if vals else (0, 0)
+            low = {s for s, v in vals.items() if v == lo}
+            high = {s for s, v in vals.items() if v == hi}
+            seed[m] = (set(), set()) if lo == hi else (high, low) if m in HIGHER_IS_BETTER else (low, high)
         out.setdefault((split_seed(wid)[0], cores), []).append(seed)
     return out
 
@@ -67,12 +71,18 @@ def skeleton(batch_dir) -> str:
         for m in RANKED:
             per_seed = []
             for s in seeds:
-                vals = {r["strategy"]: r.get(m) for r in s["rows"] if r["status"] == "ok"}
+                vals = {r["strategy"]: r.get(m) for r in s["rows"] if r["status"] == "ok" and r.get(m) is not None}
+                if not vals:
+                    per_seed.append(f"seed {split_seed(s['workload_id'])[1]}: no value")
+                    continue
                 best, worst = s[m]
+                hi_best = m in HIGHER_IS_BETTER
                 fmt = lambda names: "/".join(sorted(names)) or "all tied"
-                per_seed.append(f"seed {split_seed(s['workload_id'])[1]}: lowest {fmt(best)} "
-                                f"({min(vals.values()):g}), highest {fmt(worst)} ({max(vals.values()):g})")
-            out.append(f"- {SHORT[m]}: " + "; ".join(per_seed))
+                b, w = (max, min) if hi_best else (min, max)
+                per_seed.append(f"seed {split_seed(s['workload_id'])[1]}: best {fmt(best)} "
+                                f"({b(vals.values()):g}), worst {fmt(worst)} ({w(vals.values()):g})")
+            out.append(f"- {SHORT[m]}{' (higher is better)' if m in HIGHER_IS_BETTER else ''}: "
+                       + "; ".join(per_seed))
         failed = [f"{r['strategy']} on {s['workload_id']}" for s in seeds for r in s["rows"] if r["status"] != "ok"]
         out += [f"- failed runs: {', '.join(failed) or 'none'}",
                 "- evidence (run ids): " + ", ".join(f"{r['strategy']}={r['run_id']}" for s in seeds for r in s["rows"]),

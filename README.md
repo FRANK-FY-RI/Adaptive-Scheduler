@@ -24,7 +24,12 @@ for researcher-defined policies.
 -   Optional policy-driven preemption, with remaining-runtime accounting
     and job resumption.
 -   Built-in multi-core SRTF-inspired preemptive policy.
+-   Adaptive multi-factor priority policy (`adaptive_multifactor`), grounded
+    in Slurm-style multifactor priority, with adaptive weights, selective
+    reservation and optional preemption (`docs/ADAPTIVE_POLICY.md`).
 -   Custom policy registration and discovery.
+-   Experiment runner, metrics, exports, plots and a web dashboard
+    (`researcher/`, see section 11).
 -   Load a researcher policy from a standalone Python file.
 -   Immutable `SchedulerContext` snapshots and engine invariant checks.
 -   Profiling counters and per-job execution records.
@@ -54,6 +59,7 @@ adaptive_scheduler/
 │           ├── fifo.py
 │           ├── sjf.py
 │           ├── adaptive.py
+│           ├── adaptive_multifactor.py
 │           ├── easy_backfill.py
 │           └── srtf.py
 ├── examples/
@@ -63,9 +69,13 @@ adaptive_scheduler/
 │   ├── test_engine.py
 │   ├── test_policies.py
 │   ├── test_preemption.py
+│   ├── test_adaptive_multifactor.py
 │   └── test_policy_loader.py
-└── workloads/
-    └── synthetic_workload.csv
+├── workloads/
+│   └── synthetic_workload.csv
+├── researcher/          experiments, metrics, analysis, HTTP API, dashboard
+│   └── README.md
+└── docs/                ADAPTIVE_POLICY, EVALUATION, API, M1_GAP_ANALYSIS, DECISIONS
 ```
 
 The exact set of files may vary as the project evolves.
@@ -139,11 +149,11 @@ python -m adaptive_scheduler.run_simulation \
     --policy srtf
 ```
 
-The CLI currently exposes `fifo`, `fifo-fit`, `sjf`, `sjf-fit`, and
-`srtf` as built-in `--policy` choices. `AdaptivePolicy` and
-`EASYBackfillPolicy` are available through the policy package API; do
-not assume they are CLI choices unless the CLI has been extended to
-include them.
+The CLI exposes `fifo`, `fifo-fit`, `sjf`, `sjf-fit`, `srtf`,
+`easy-backfill`, `adaptive`, `adaptive-multifactor` and
+`adaptive-multifactor-preemptive` as built-in `--policy` choices, each
+with its default parameters. To set parameters, compare policies or
+export results, use the experiment runner (`adaptivesched`, section 11).
 
 Use the CLI help for the exact options in your checkout:
 
@@ -202,7 +212,22 @@ read-only `SchedulerContext`.
                          can preempt running   
                          jobs to admit a       
                          shorter waiting job.  
+
+  `AdaptiveMultifactor   Normalised age,          Optional (`preemptive`
+  Policy`                shortness and size                    parameter)
+                         factors; weights
+                         shift toward age as
+                         the queue ages; a
+                         starving top job
+                         holds a reservation.
   -------------------------------------------------------------------------
+
+Every policy has one stable identifier, listed by
+`adaptive_scheduler.policies.policy_ids()`: `adaptive`,
+`adaptive_multifactor`, `easy_backfill`, `fifo`, `sjf`, `srtf`, plus any
+registered custom names. `discover_policies()` also returns class-name
+aliases. `AdaptiveMultifactorPolicy`'s formula, parameters, tie-breaking
+and limitations are specified in `docs/ADAPTIVE_POLICY.md`.
 
 ### Use policies programmatically
 
@@ -228,6 +253,7 @@ Other policies can be imported from `adaptive_scheduler.policies`:
 
 ``` python
 from adaptive_scheduler.policies import (
+    AdaptiveMultifactorPolicy,
     AdaptivePolicy,
     EASYBackfillPolicy,
     FIFOPolicy,
@@ -491,7 +517,9 @@ python -m unittest tests.test_policy_loader -v
 ```
 
 If a test module uses pytest fixtures or `pytest.raises`, invoke it with
-`pytest`.
+`pytest`. With the experiment package installed (section 11), `pytest`
+from the repository root runs everything: engine, policies, experiments
+and the HTTP API.
 
 ## 10. Development conventions
 
@@ -509,3 +537,30 @@ If a test module uses pytest fixtures or `pytest.raises`, invoke it with
 -   Keep scheduling decisions inside policy classes; the engine remains
     responsible for state transitions, event management, and resource
     accounting.
+
+## 11. Experiments, analysis and the web dashboard
+
+`researcher/` holds the experiment layer and dashboard. It runs policies
+on the same workload and cluster, computes metrics with one definition
+each, exports reproducible CSV/JSON results, and draws plots and Gantt
+charts. The dashboard is a second interface on the same runner.
+
+``` bash
+python -m pip install -e .                    # engine (this directory)
+python -m pip install -e "researcher[test]"   # experiments + dashboard
+cd researcher
+adaptivesched batch   --config examples/batch_study.yaml
+adaptivesched compare --batch results/batch_<id>
+adaptivesched plot    --batch results/batch_<id>
+adaptivesched serve                            # http://127.0.0.1:8000/
+```
+
+| Document | Contents |
+|---|---|
+| `researcher/README.md` | CLI, workload and config formats, metric definitions, dashboard sections, known limitations |
+| `docs/ADAPTIVE_POLICY.md` | literature review, formulation and specification of `adaptive_multifactor` |
+| `docs/EVALUATION.md` | methodology, results and trade-offs of all policies (synthetic and real logs) |
+| `docs/TUNING.md` | parameter search for `adaptive_multifactor` and the recommended weights |
+| `docs/API.md` | HTTP API reference |
+| `docs/M1_GAP_ANALYSIS.md` | requirements checklist, architecture, acceptance criteria |
+| `docs/DECISIONS.md` | design decisions of this phase |

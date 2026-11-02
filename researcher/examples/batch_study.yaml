@@ -1,0 +1,34 @@
+# The study batch: five workload conditions x eight strategy configurations x three seeds,
+# 16 CPU cores. Every parameter is written out so each summary and the config hash carry it,
+# and a change of a policy's defaults cannot silently change the results.
+#   fifo, sjf               wait-behind-head baselines
+#   easy_backfill           arrival order + EASY reservation for the head job
+#   srtf                    preemptive shortest remaining runtime
+#   adaptive                team's waiting-time-weighted utility, first-fit, no reservation
+#   adaptive_multifactor    the policy of docs/ADAPTIVE_POLICY.md (defaults)
+#   amf_preemptive          same, with priority preemption on
+#   amf_fixed               same, adaptation off (gain 0): the control that isolates adaptation
+cluster_cores: 16
+workloads:
+  - synth:light:n=300:seed=7
+  - synth:heavy:n=300:seed=7
+  - synth:short_heavy:n=300:seed=7
+  - synth:mixed:n=300:seed=7
+  - synth:wide_jobs:n=300:seed=7
+strategies: [fifo, sjf, easy_backfill, srtf, adaptive, adaptive_multifactor, amf_preemptive, amf_fixed]
+strategy_params:
+  fifo: {strict_head_of_line: true}
+  sjf: {strict_head_of_line: true}
+  adaptive: {base_wait_weight: 0.1}
+  adaptive_multifactor: &amf {age_weight: 0.4, short_weight: 0.4, size_weight: 0.2, max_age: 500,
+                              adaptation_gain: 0.5, reservation_xf: 2.0, preemptive: false,
+                              preempt_margin: 0.1}
+variants:
+  amf_preemptive:
+    strategy: adaptive_multifactor
+    params: {<<: *amf, preemptive: true}
+  amf_fixed:
+    strategy: adaptive_multifactor
+    params: {<<: *amf, adaptation_gain: 0.0}
+repeats: {seeds: [7, 11, 13]}
+output_dir: results/

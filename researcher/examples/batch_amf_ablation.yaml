@@ -1,0 +1,21 @@
+# Ablation of adaptive_multifactor on the three most congested conditions (docs/EVALUATION.md §5):
+# one parameter changed per variant, everything else at the defaults of batch_study.yaml.
+#   amf_age5000   max_age 5000 instead of 500 (the age factor saturates 10x later)
+#   amf_reserve   reservation_xf 1.0: the top job always holds a reservation (EASY on the utility order)
+#   amf_noreserve reservation_xf .inf: never reserve (greedy first-fit on the utility order)
+cluster_cores: 16
+workloads:
+  - synth:heavy:n=300:seed=7
+  - synth:mixed:n=300:seed=7
+  - synth:wide_jobs:n=300:seed=7
+strategies: [easy_backfill, adaptive_multifactor, amf_age5000, amf_reserve, amf_noreserve]
+strategy_params:
+  adaptive_multifactor: &amf {age_weight: 0.4, short_weight: 0.4, size_weight: 0.2, max_age: 500,
+                              adaptation_gain: 0.5, reservation_xf: 2.0, preemptive: false,
+                              preempt_margin: 0.1}
+variants:
+  amf_age5000: {strategy: adaptive_multifactor, params: {<<: *amf, max_age: 5000}}
+  amf_reserve: {strategy: adaptive_multifactor, params: {<<: *amf, reservation_xf: 1.0}}
+  amf_noreserve: {strategy: adaptive_multifactor, params: {<<: *amf, reservation_xf: .inf}}
+repeats: {seeds: [7, 11, 13]}
+output_dir: results/

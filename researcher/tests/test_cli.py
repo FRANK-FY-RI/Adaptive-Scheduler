@@ -8,7 +8,8 @@ def test_strategies_fake(capsys):
 
 def test_strategies_team(capsys):
     assert main(["strategies"]) == 0
-    assert capsys.readouterr().out.splitlines() == ["adaptive", "easy_backfill", "fifo", "sjf"]
+    assert capsys.readouterr().out.splitlines() == ["adaptive", "adaptive_multifactor", "easy_backfill",
+                                                      "fifo", "sjf", "srtf"]
 
 
 def test_workloads_list_and_show(capsys):

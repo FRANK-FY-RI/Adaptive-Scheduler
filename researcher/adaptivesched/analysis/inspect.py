@@ -1,9 +1,17 @@
-"""UC-R03: show one job's execution record and check its two invariants."""
+"""UC-R03: show one job's execution record and check its invariants (preemption-aware)."""
 from __future__ import annotations
 
 from pathlib import Path
 
+from adaptivesched.experiments.adapter import parse_job_id, record_problems
 from adaptivesched.experiments.export import read_records
+
+CHECKS = ["start_time >= arrival_time",
+          "first segment starts at start_time and last ends at finish_time",
+          "segments are positive, ordered and non-overlapping",
+          "execution segments sum to runtime",
+          "waiting_time == finish_time - arrival_time - runtime",
+          "number of segments == preemption_count + 1"]
 
 
 def records_path(run) -> Path:
@@ -18,19 +26,19 @@ def records_path(run) -> Path:
     return p
 
 
-def inspect_job(run, job_id: int) -> tuple[str, bool]:
-    """(report text, invariants hold)."""
+def inspect_job(run, job_id) -> tuple[str, bool]:
+    """(report text, invariants hold). job_id: an int or a string id; "7" means job 7."""
+    job_id = parse_job_id(job_id) if isinstance(job_id, str) else job_id
     recs = {r.job_id: r for r in read_records(records_path(run))}
     if job_id not in recs:
         raise ValueError(f"job {job_id} is not in {run} ({len(recs)} jobs)")
     r = recs[job_id]
-    wait, turnaround = r.start_time - r.arrival_time, r.finish_time - r.arrival_time
-    checks = [(f"waiting_time == start_time - arrival_time  ({r.waiting_time} == {wait})", r.waiting_time == wait),
-              (f"finish_time == start_time + runtime  ({r.finish_time} == {r.start_time + r.runtime})",
-               r.finish_time == r.start_time + r.runtime)]
+    failed = set(record_problems(r))
+    segs = "; ".join(f"[{a}, {b})" for a, b in r.segments())
     lines = [f"job {r.job_id}",
-             *(f"  {k:<15} {v}" for k, v in vars(r).items() if k != "job_id"),
-             f"  derived waiting time     {wait}",
-             f"  derived turnaround time  {turnaround}",
-             *(f"  [{'ok' if ok else 'FAILED'}] {text}" for text, ok in checks)]
-    return "\n".join(lines), all(ok for _, ok in checks)
+             *(f"  {k:<15} {v}" for k, v in vars(r).items() if k not in ("job_id", "execution_segments")),
+             f"  segments        {segs}",
+             f"  derived waiting time     {r.finish_time - r.arrival_time - r.runtime}",
+             f"  derived turnaround time  {r.finish_time - r.arrival_time}",
+             *(f"  [{'FAILED' if c in failed else 'ok'}] {c}" for c in CHECKS)]
+    return "\n".join(lines), not failed

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import re
 import sys
@@ -20,6 +21,21 @@ def _workloads(args):
     from adaptivesched.workloads.generators import GENERATORS
     from adaptivesched.workloads.loader import to_csv_text
 
+    if args.from_swf:
+        from pathlib import Path
+
+        from adaptivesched.workloads.swf import swf_window
+
+        if not args.out:
+            raise ValueError("--from-swf needs --out CSV")
+        text, cores, info = swf_window(args.from_swf, args.jobs, args.start)
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(text, encoding="utf-8", newline="\n")
+        print(f"wrote {Path(args.out).as_posix()}: {info['window_jobs']} jobs (SWF {info['first_job']}.."
+              f"{info['last_job']}) of {info['jobs_in_log']} usable, {info['computer']}, {cores} CPU cores, "
+              f"arrivals over {info['arrival_span_s'] / 86400:.1f} days")
+        print(f"run it with cluster_cores: {cores}")
+        return
     if not args.show:
         print("Named synthetic workloads. Id: synth:<name>:n=<n_jobs>:seed=<seed>;")
         print("the jobs also depend on the cluster's CPU cores, which every run records.\n")
@@ -45,7 +61,15 @@ METRIC_LABELS = [
     ("makespan", "makespan"),
     ("bounded_slowdown", "bounded slowdown (tau=10)"),
     ("average_turnaround_time", "average turnaround time"),
+    ("completed_jobs", "completed jobs"),
+    ("throughput", "throughput (jobs/time unit)"),
+    ("fairness_index", "fairness (Jain, slowdowns)"),
+    ("total_preemptions", "preemptions"),
 ]
+
+# `plot` default: the five comparisons of the brief (§2.4) plus max wait and fairness.
+PLOT_METRICS = ["average_waiting_time", "average_turnaround_time", "cpu_utilization", "makespan",
+                "bounded_slowdown", "max_waiting_time", "fairness_index"]
 
 
 def _engine_banner(engine):
@@ -72,6 +96,7 @@ def _run(args):
     for key, label in METRIC_LABELS:
         v = s[key]
         print(f"  {label:<28} {v:.3f}" if isinstance(v, float) else f"  {label:<28} {v}")
+    print(f"  {'preemptive':<28} {'yes' if s['preemptive'] else 'no'}")
     print(f"dispatch: {meta['strategy_dispatch_note']}")
     for p in write_run(outcome, Path(cfg.output_dir) / "runs"):
         print(f"wrote {p.as_posix()}")
@@ -141,6 +166,34 @@ def _inspect(args):
     return 0 if ok else 1
 
 
+def _serve(args):
+    from adaptivesched.api.server import serve
+
+    serve(args.host, args.port, args.results, engine=args.engine)
+
+
+def _tune(args):
+    import glob
+    from pathlib import Path
+
+    from adaptivesched.experiments.tune import tune
+
+    windows = sorted(glob.glob(args.windows))
+    if not windows:
+        raise ValueError(f"--windows {args.windows!r} matches no file")
+    defaults = {"age_weight": 0.4, "short_weight": 0.4, "size_weight": 0.2, "max_age": 500.0,
+                "adaptation_gain": 0.5, "reservation_xf": 2.0, "preemptive": False, "preempt_margin": 0.1}
+    res = tune(windows, args.out, args.trials, seed=args.seed, workers=args.workers,
+               preemptive={"any": None, "on": True, "off": False}[args.preemptive],
+               extra={"defaults": defaults, "age7d": {**defaults, "max_age": 604800.0}})
+    for k in ("best", "best_non_preemptive", "best_preemptive"):
+        r = res[k]
+        if r:
+            print(f"{k:20} J {r['J']:+.3f}  bsld x{r['bsld_ratio']:.2f}  max wait x{r['max_wait_ratio']:.2f}  "
+                  f"avg wait x{r['avg_wait_ratio']:.2f} (vs easy_backfill)")
+    print(f"{res['evaluated']} candidates on {len(windows)} windows; wrote {Path(args.out).as_posix()}/result.json, candidates.csv")
+
+
 def main(argv: list[str] | None = None) -> int:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--engine", choices=sorted(ADAPTERS), default="team",
@@ -157,6 +210,10 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--show", metavar="WORKLOAD", help="synthetic id or CSV path to validate and print")
     w.add_argument("--cluster-cores", type=int, help="CPU core capacity (required with --show)")
     w.add_argument("--head", type=int, help="print only the first N jobs")
+    w.add_argument("--from-swf", metavar="SWF", help="convert a Parallel Workloads Archive log (.swf or .swf.gz)")
+    w.add_argument("--jobs", type=int, default=5000, help="with --from-swf: consecutive jobs to keep (default 5000)")
+    w.add_argument("--start", type=int, help="with --from-swf: index of the first usable job (default: centred)")
+    w.add_argument("--out", help="with --from-swf: CSV file to write")
     w.set_defaults(func=_workloads)
     r = sub.add_parser("run", parents=[common], help="run one strategy on one workload and capacity")
     r.add_argument("--config", required=True, help="run config YAML (workload, strategy, cluster_cores)")
@@ -169,8 +226,8 @@ def main(argv: list[str] | None = None) -> int:
     c.set_defaults(func=_compare)
     p = sub.add_parser("plot", help="comparison plots, or a Gantt chart pair, from a batch directory")
     p.add_argument("--batch", required=True, help="batch directory written by `adaptivesched batch`")
-    p.add_argument("--metric", nargs="+", default=["average_waiting_time", "max_waiting_time"],
-                   help="metrics for the small-multiples grid")
+    p.add_argument("--metric", nargs="+", default=PLOT_METRICS,
+                   help="metrics for the small-multiples grids (default: the seven comparison metrics)")
     p.add_argument("--gantt", nargs=3, metavar=("WORKLOAD", "A", "B"),
                    help="Gantt charts of strategies A and B on one workload id, stacked")
     p.set_defaults(func=_plot)
@@ -179,8 +236,22 @@ def main(argv: list[str] | None = None) -> int:
     f.set_defaults(func=_findings)
     i = sub.add_parser("inspect", help="show one job's execution record and check its invariants")
     i.add_argument("--run", required=True, help="results/batch_xxx/runs/<run_id>")
-    i.add_argument("--job", required=True, type=int, help="job_id")
+    i.add_argument("--job", required=True, help="job_id (integer or string id)")
     i.set_defaults(func=_inspect)
+    t = sub.add_parser("tune", help="search adaptive_multifactor's parameters on training windows")
+    t.add_argument("--windows", required=True, help="glob of converted CSV windows, e.g. '../workloads/pwa/train/*.csv'")
+    t.add_argument("--trials", type=int, default=160, help="random-search candidates before refinement")
+    t.add_argument("--seed", type=int, default=2026)
+    t.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1), help="parallel simulations")
+    t.add_argument("--out", default="results/tuning")
+    t.add_argument("--preemptive", choices=["any", "on", "off"], default="any",
+                   help="search preemption (any) or fix it on/off for every candidate")
+    t.set_defaults(func=_tune)
+    s = sub.add_parser("serve", parents=[common], help="web dashboard and HTTP API on the same runner")
+    s.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1: this machine only)")
+    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--results", default="results/web", help="directory experiments are stored in")
+    s.set_defaults(func=_serve)
 
     args = parser.parse_args(argv)
     try:

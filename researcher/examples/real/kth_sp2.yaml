@@ -1,0 +1,19 @@
+# Real workload: two 5,000-job windows of the kth_sp2 log (Parallel Workloads Archive, cleaned),
+# converted by `adaptivesched workloads --from-swf` (workloads/README.md). Run at the machine's
+# own size, 100 CPU cores. Same eight configurations as batch_study.yaml, plus amf_age7d:
+# AMF with max_age = 7 days (Slurm's default PriorityMaxAge), since these logs count in seconds.
+cluster_cores: 100
+workloads: [../workloads/pwa/kth_sp2_5000.csv, ../workloads/pwa/kth_sp2_5000_q1.csv]
+strategies: [fifo, sjf, easy_backfill, srtf, adaptive, adaptive_multifactor, amf_preemptive, amf_fixed, amf_age7d]
+strategy_params:
+  fifo: {strict_head_of_line: true}
+  sjf: {strict_head_of_line: true}
+  adaptive: {base_wait_weight: 0.1}
+  adaptive_multifactor: &amf {age_weight: 0.4, short_weight: 0.4, size_weight: 0.2, max_age: 500,
+                              adaptation_gain: 0.5, reservation_xf: 2.0, preemptive: false,
+                              preempt_margin: 0.1}
+variants:
+  amf_preemptive: {strategy: adaptive_multifactor, params: {<<: *amf, preemptive: true}}
+  amf_fixed: {strategy: adaptive_multifactor, params: {<<: *amf, adaptation_gain: 0.0}}
+  amf_age7d: {strategy: adaptive_multifactor, params: {<<: *amf, max_age: 604800}}
+output_dir: results/real/

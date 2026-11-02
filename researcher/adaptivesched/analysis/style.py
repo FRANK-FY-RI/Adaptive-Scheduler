@@ -1,8 +1,10 @@
 """One fixed colour per strategy across every plot, and shared figure styling.
 
-Colours are slots 1-3 of the dataviz skill's validated categorical palette (light mode),
-which pass the all-pairs colour-vision checks needed for scatter plots. A fourth strategy
-gets neutral grey, never a generated hue; add a slot here deliberately if one is registered.
+Colours are the dataviz skill's validated categorical palette (light mode), slots 1-8 in their
+fixed order; the order passes every adjacent-pair colour-vision check (bars, lines). Only slots
+1-3 pass all-pairs, so wherever more than three strategies share a scatter or CDF, every series
+is also direct-labelled: identity never rests on colour alone. Any other strategy gets neutral
+grey, never a generated hue. The dashboard (web/style.css) uses the same slots.
 """
 from __future__ import annotations
 
@@ -13,7 +15,9 @@ import matplotlib
 matplotlib.use("Agg")  # files only, never shown interactively
 import matplotlib.pyplot as plt  # noqa: E402
 
-STRATEGY_COLORS = {"fifo": "#2a78d6", "sjf": "#eb6834", "adaptive": "#1baf7a"}  # easy_backfill: OTHER (no 4th hue passes all-pairs)
+STRATEGY_COLORS = {"fifo": "#2a78d6", "sjf": "#eb6834", "adaptive": "#1baf7a", "easy_backfill": "#eda100",
+                   "srtf": "#e87ba4", "adaptive_multifactor": "#008300", "amf_preemptive": "#6250d6",
+                   "amf_fixed": "#e34948"}
 OTHER = "#8a8985"
 SURFACE, TEXT, TEXT_2, GRID, IDLE = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df", "#efeeea"
 CONDITION_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]

@@ -59,3 +59,44 @@ def test_bounded_slowdown_bound_bites():
 def test_empty_run_rejected():
     with pytest.raises(ValueError, match="no job records"):
         m.average_waiting_time([])
+    with pytest.raises(ValueError, match="no job records"):
+        m.fairness_index([])
+
+
+def test_throughput_completed_fairness_on_three():
+    """THREE: 3 completed jobs, makespan 7 -> throughput 3/7 = .428571.
+    Slowdowns all 1 (test above) -> Jain (3)^2 / (3 * 3) = 1.0. No preemptions."""
+    assert m.completed_jobs(THREE) == 3
+    assert m.throughput(THREE) == pytest.approx(3 / 7)
+    assert m.fairness_index(THREE) == 1.0
+    assert m.total_preemptions(THREE) == 0
+
+
+def test_fairness_one_job_takes_the_slowdown():
+    """Slowdowns 1 and 3 (the bound-bites case gives 3.0 and 1.5; use 1-unit job waiting 29 -> 3,
+    and a 20-unit job waiting 0 -> 1): Jain = (1+3)^2 / (2 * (1 + 9)) = 16/20 = .8."""
+    recs = [rec(1, 0, 29, 1, 1), rec(2, 0, 0, 20, 1)]
+    assert m.fairness_index(recs) == pytest.approx(0.8)
+
+
+# 2 CPU cores, the preemption case from the team's tests/test_adaptive_multifactor.py:
+#   L arrival 0, runtime 100, 2 cores, ran [0,10) and [11,101) (preempted once), finish 101
+#   S arrival 10, runtime 1, 2 cores, ran [10,11)
+PREEMPTED = [JobRecord(1, 0, 0, 101, 100, 1, 2, 1, ((0, 10), (11, 101))),
+             JobRecord(2, 10, 10, 11, 1, 0, 2, 0, ((10, 11),))]
+
+
+def test_metrics_with_preemption():
+    """waits = 101-0-100 = 1 (not start-arrival = 0: L waited [10,11) while suspended), 11-10-1 = 0
+      -> avg .5, max 1.
+    turnaround 101, 1 -> 51.  makespan 101 - 0 = 101.
+    busy = 2*100 + 2*1 = 202 = capacity 2*101 -> utilization 100.
+    throughput 2/101.  slowdown L 101/100 = 1.01, S max(1, 1/10) = 1 -> 1.005.
+    Jain (2.01)^2 / (2 * (1.0201 + 1)) = 4.0401/4.0402 = .99997525.  preemptions 1."""
+    assert m.average_waiting_time(PREEMPTED) == 0.5 and m.max_waiting_time(PREEMPTED) == 1
+    assert m.average_turnaround_time(PREEMPTED) == 51
+    assert m.makespan(PREEMPTED) == 101 and m.cpu_utilization_pct(PREEMPTED, 2) == 100
+    assert m.throughput(PREEMPTED) == pytest.approx(2 / 101)
+    assert m.bounded_slowdown(PREEMPTED) == pytest.approx(1.005)
+    assert m.fairness_index(PREEMPTED) == pytest.approx(4.0401 / 4.0402)
+    assert m.total_preemptions(PREEMPTED) == 1

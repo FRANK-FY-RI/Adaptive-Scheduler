@@ -20,7 +20,7 @@ from __future__ import annotations
 import heapq
 from typing import Sequence
 
-from adaptivesched.experiments.adapter import JobRecord, JobSpec
+from adaptivesched.experiments.adapter import JobRecord, JobSpec, job_key
 
 VERSION = "fake-0.1"
 
@@ -47,8 +47,8 @@ def simulate(jobs: Sequence[JobSpec], cluster_cores: int, strategy: str) -> list
             raise ValueError(f"job {j.job_id}: required_cores={j.required_cores} "
                              f"does not fit cluster_cores={cluster_cores}")
 
-    key = _KEYS[strategy]
-    arrivals = sorted(jobs, key=lambda j: (j.arrival_time, j.job_id))
+    key = lambda j: (*_KEYS[strategy](j)[:-1], job_key(j.job_id))  # mixed int/str ids sort safely
+    arrivals = sorted(jobs, key=lambda j: (j.arrival_time, job_key(j.job_id)))
     queue: list = []    # heap of (key, job); keys are unique because they end in job_id
     running: list = []  # heap of (finish_time, job_id, required_cores)
     free, i, records = cluster_cores, 0, []
@@ -66,7 +66,8 @@ def simulate(jobs: Sequence[JobSpec], cluster_cores: int, strategy: str) -> list
         while queue and queue[0][1].required_cores <= free:
             j = heapq.heappop(queue)[1]
             free -= j.required_cores
-            heapq.heappush(running, (t + j.runtime, j.job_id, j.required_cores))
+            heapq.heappush(running, (t + j.runtime, job_key(j.job_id), j.required_cores))
             records.append(JobRecord(j.job_id, j.arrival_time, t, t + j.runtime,
-                                     j.runtime, t - j.arrival_time, j.required_cores))
+                                     j.runtime, t - j.arrival_time, j.required_cores, 0,
+                                     ((t, t + j.runtime),)))
     return records

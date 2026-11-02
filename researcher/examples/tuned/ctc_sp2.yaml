@@ -1,0 +1,23 @@
+# Validation of the tuned adaptive_multifactor parameters (docs/TUNING.md) on the two held-out 5,000-job windows of the ctc_sp2 log.
+# The search (adaptivesched tune) used only workloads/pwa/train/*; these windows were never seen.
+#   amf_tuned            best non-preemptive candidate (results/tuning_np, seed 2027)
+#   amf_tuned_preemptive best overall candidate, which preempts (results/tuning, seed 2026)
+cluster_cores: 338
+workloads: [../workloads/pwa/ctc_sp2_5000.csv, ../workloads/pwa/ctc_sp2_5000_q1.csv]
+strategies: [easy_backfill, sjf, srtf, adaptive, adaptive_multifactor, amf_age7d, amf_tuned, amf_tuned_preemptive]
+strategy_params:
+  adaptive: {base_wait_weight: 0.1}
+  adaptive_multifactor: &amf {age_weight: 0.4, short_weight: 0.4, size_weight: 0.2, max_age: 500,
+                              adaptation_gain: 0.5, reservation_xf: 2.0, preemptive: false,
+                              preempt_margin: 0.1}
+variants:
+  amf_age7d: {strategy: adaptive_multifactor, params: {<<: *amf, max_age: 604800}}
+  amf_tuned:
+    strategy: adaptive_multifactor
+    params: {age_weight: 0.386, short_weight: 0.521, size_weight: 0.093, max_age: 203692,
+             adaptation_gain: 0.24, reservation_xf: 1.0, preemptive: false, preempt_margin: 0.1}
+  amf_tuned_preemptive:
+    strategy: adaptive_multifactor
+    params: {age_weight: 0.687, short_weight: 0.2965, size_weight: 0.0166, max_age: 984900,
+             adaptation_gain: 0.715, reservation_xf: .inf, preemptive: true, preempt_margin: 0.0006}
+output_dir: results/tuned/

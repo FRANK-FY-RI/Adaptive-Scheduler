@@ -24,7 +24,8 @@ def run(name, cores, strategy):
     for r in res.records:  # UC-R03 invariants
         assert r.waiting_time == r.start_time - r.arrival_time
         assert r.finish_time == r.start_time + r.runtime
-    return [tuple(vars(r).values()) for r in res.records]
+    assert all(r.segments() == ((r.start_time, r.finish_time),) for r in res.records)
+    return [tuple(vars(r).values())[:7] for r in res.records]
 
 
 def test_hol_block_fifo():
@@ -162,24 +163,18 @@ def test_team_engine_first_fit_param():
 
 @pytest.mark.parametrize("strategy", ["easy_backfill", "adaptive"])
 def test_team_backfilling_strategies_hand_computed(strategy):
-    """hol_block, 4 CPU cores, team defaults (adaptive: base weights .35/.45/.20, gain .5, backfill on).
+    """hol_block, 4 CPU cores, team defaults at main @ daa589d.
 
-    easy_backfill: t=0 job 1 [0,10) (free 2). t=1 job 2 needs 3; shadow = 10 (job 1 frees 2),
-      extra cores at shadow = 4-0-3 = 1. t=2 job 3: 2+2=4 <= 10 -> [2,4). t=3 job 4: 3+2=5 <= 10
-      -> [3,5). t=10 job 2 [10,15).
-    adaptive: t=2 waiting 2,3; pressure 0 (waits 1,0 < mean runtime 3.5), idle 2/4 ->
-      w = (.35, .45, .2625); wait_scale 3.5, min runtime 2.
-      U2 = .35*1/3.5 + .45*2/5 + .2625*3/4 = .1 + .18 + .196875 = .476875
-      U3 = 0 + .45*2/2 + .2625*1/4 = .45 + .065625 = .515625 -> job 3 [2,4).
-      t=3 waiting 2,4; idle 1/4 -> w_pack .23125; U2 = .2 + .18 + .1734375 = .5534375,
-      U4 = .45 + .0578125 = .5078125 -> job 2 top but needs 3 (free 1); shadow 10, extra 1;
-      job 4: 3+2=5 <= 10 -> backfills [3,5). t=10 job 2 [10,15).
-    Both: waits 0, 9, 0, 0 -> avg 2.25, max 9, makespan 15; job 2 is not delayed by the backfill."""
+    easy_backfill: t=0 job 1 [0,10) (free 2). t=1 job 2 needs 3; reserved start = 10 (job 1 frees 2).
+      t=2 job 3: 2+2=4 <= 10 -> [2,4). t=3 job 4: 3+2=5 <= 10 -> [3,5). t=10 job 2 [10,15).
+    adaptive (first-fit over U = w_wait*wait - runtime - 0.1*cores, no reservation): t=1 job 2 does
+      not fit (free 2). t=2 only job 3 fits -> [2,4). t=3 only job 4 fits -> [3,5). t=10 job 2.
+    Both: waits 0, 9, 0, 0 -> avg 2.25, max 9, makespan 15."""
     res = TeamEngineAdapter().run(load("hol_block.csv"), 4, strategy, {}, workload_id="x")
-    assert [tuple(vars(r).values()) for r in res.records] == [
+    assert [tuple(vars(r).values())[:7] for r in res.records] == [
         (1, 0, 0, 10, 10, 0, 2),
         (2, 1, 10, 15, 5, 9, 3),
         (3, 2, 2, 4, 2, 0, 1),
         (4, 3, 3, 5, 2, 0, 1),
     ]
-    assert "backfill" in res.strategy_dispatch_note
+    assert ("backfill" if strategy == "easy_backfill" else "first-fit") in res.strategy_dispatch_note

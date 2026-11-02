@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdaptiveSched Dashboard</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">AdaptiveSched <span class="muted">scheduling experiments</span></div>
+  <nav id="tabs">
+    <a href="#overview" data-tab="overview">Overview</a>
+    <a href="#configure" data-tab="configure">Configure</a>
+    <a href="#experiments" data-tab="experiments">Experiments</a>
+    <a href="#results" data-tab="results">Results</a>
+    <a href="#gantt" data-tab="gantt">Gantt</a>
+    <a href="#jobs" data-tab="jobs">Jobs</a>
+  </nav>
+</header>
+
+<main>
+  <div id="flash" class="flash" hidden></div>
+
+  <section id="overview" class="tab">
+    <h1>A. Overview</h1>
+    <div class="tiles" id="ov-tiles"></div>
+    <div class="cols">
+      <div class="card"><h2>Scheduling policies</h2><ul id="ov-policies" class="plain"></ul></div>
+      <div class="card"><h2>Recent experiments</h2><div id="ov-recent" class="scroll"></div></div>
+    </div>
+    <p class="note">Results are properties of the simulation model (one cluster, CPU cores only, exact
+      runtimes, zero-cost preemption), not predictions for a real cluster. No policy is ranked overall:
+      compare them per workload and per metric.</p>
+  </section>
+
+  <section id="configure" class="tab" hidden>
+    <h1>B. Experiment configuration</h1>
+    <form id="cfg" class="card" novalidate>
+      <div class="row">
+        <label>Name <input name="name" maxlength="200" placeholder="optional label"></label>
+        <label>Cluster CPU cores <input name="cluster_cores" type="number" min="1" value="16" required></label>
+      </div>
+      <fieldset>
+        <legend>Workloads</legend>
+        <div class="row">
+          <label>Jobs per synthetic workload <input name="n_jobs" type="number" min="1" value="100"></label>
+          <label>Seeds (comma-separated) <input name="seeds" value="7"></label>
+        </div>
+        <div id="cfg-synth" class="checks"></div>
+        <div id="cfg-csv" class="checks"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Scheduling policies</legend>
+        <p class="muted small">Tick one or more. Parameters left unchanged use the policy's default.
+          Preemptive execution is a parameter of the policies that support it.</p>
+        <div id="cfg-policies"></div>
+        <button type="button" id="add-variant" class="ghost">+ Add a variant (same policy, other parameters)</button>
+        <div id="cfg-variants"></div>
+      </fieldset>
+      <div class="row end">
+        <span id="cfg-summary" class="muted"></span>
+        <button type="submit">Run experiment</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="experiments" class="tab" hidden>
+    <h1>C. Experiment execution &amp; G. history</h1>
+    <div id="exp-detail" class="card" hidden></div>
+    <div class="card"><h2>All experiments</h2><div id="exp-list" class="scroll"></div></div>
+  </section>
+
+  <section id="results" class="tab" hidden>
+    <h1>D. Results and analysis</h1>
+    <div class="pickers card">
+      <label>Experiment <select id="res-exp"></select></label>
+      <label>Workload and CPU cores <select id="res-group"></select></label>
+    </div>
+    <p class="muted small">One table per workload and capacity: strategies are only ever compared on the same jobs
+      and the same cluster.</p>
+    <div class="card"><h2>Metrics</h2><div id="res-table" class="scroll"></div></div>
+    <div id="res-charts" class="charts"></div>
+    <div class="card"><h2>H. Export</h2><div id="res-export"></div></div>
+  </section>
+
+  <section id="gantt" class="tab" hidden>
+    <h1>E. Gantt chart</h1>
+    <div class="pickers card">
+      <label>Experiment <select class="pick-exp"></select></label>
+      <label>Workload <select class="pick-group"></select></label>
+      <label>Strategy <select class="pick-run"></select></label>
+    </div>
+    <div class="card">
+      <div id="gantt-caption" class="muted small"></div>
+      <div id="gantt-wrap"><canvas id="gantt-canvas"></canvas><div id="gantt-tip" class="tip" hidden></div></div>
+      <p class="muted small">Each bar is one execution segment on the CPU-core lanes it held (lanes are assigned for
+        drawing only). Hatched: resumed after preemption. Click a bar to inspect its job.</p>
+    </div>
+  </section>
+
+  <section id="jobs" class="tab" hidden>
+    <h1>F. Job inspection</h1>
+    <div class="pickers card">
+      <label>Experiment <select class="pick-exp"></select></label>
+      <label>Workload <select class="pick-group"></select></label>
+      <label>Strategy <select class="pick-run"></select></label>
+      <label>Job id contains <input id="job-filter" placeholder="e.g. 17"></label>
+      <label class="inline"><input type="checkbox" id="job-preempted"> preempted only</label>
+    </div>
+    <div class="card">
+      <div id="job-detail"></div>
+      <div id="job-table" class="scroll"></div>
+      <div id="job-pager" class="row end"></div>
+    </div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
