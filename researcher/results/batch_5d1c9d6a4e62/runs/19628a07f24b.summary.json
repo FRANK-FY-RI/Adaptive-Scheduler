@@ -1,0 +1,37 @@
+{
+  "strategy": "sjf",
+  "workload": "synth:heavy:n=300:seed=11",
+  "cluster_cores": 16,
+  "total_jobs": 300,
+  "average_waiting_time": 95.58,
+  "max_waiting_time": 2105,
+  "cpu_utilization": 90.57026836158192,
+  "makespan": 3540,
+  "bounded_slowdown": 1.9131483167492411,
+  "tau": 10,
+  "average_turnaround_time": 162.80666666666667,
+  "utilization_interval": "first arrival to last completion (makespan)",
+  "metadata": {
+    "run_id": "19628a07f24b",
+    "workload_id": "synth:heavy:n=300:seed=11",
+    "workload_params": {
+      "source": "synthetic",
+      "generator": "heavy",
+      "seed": 11,
+      "n_jobs": 300,
+      "cluster_cores": 16,
+      "offered_load": 1.0,
+      "mean_interarrival": 10.687292,
+      "runtime_estimate_error": 0.0
+    },
+    "strategy": "sjf",
+    "strategy_params": {},
+    "strategy_dispatch_note": "team engine sjf (SJFPolicy, {'strict_head_of_line': True}): wait-behind-head (if the head job does not fit the free CPU cores, no other job starts)",
+    "cluster_cores": 16,
+    "engine": "team",
+    "engine_version": "adaptive-scheduler 0.1.0@33a6d3a6a1f0",
+    "package_version": "0.1.0",
+    "config_hash": "548015628c20",
+    "timestamp": "2026-11-01T08:31:46+00:00"
+  }
+}

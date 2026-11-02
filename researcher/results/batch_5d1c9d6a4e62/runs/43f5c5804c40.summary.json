@@ -1,0 +1,37 @@
+{
+  "strategy": "fifo",
+  "workload": "synth:heavy:n=300:seed=11",
+  "cluster_cores": 16,
+  "total_jobs": 300,
+  "average_waiting_time": 214.47666666666666,
+  "max_waiting_time": 524,
+  "cpu_utilization": 91.2923547835991,
+  "makespan": 3512,
+  "bounded_slowdown": 4.953648716873096,
+  "tau": 10,
+  "average_turnaround_time": 281.7033333333333,
+  "utilization_interval": "first arrival to last completion (makespan)",
+  "metadata": {
+    "run_id": "43f5c5804c40",
+    "workload_id": "synth:heavy:n=300:seed=11",
+    "workload_params": {
+      "source": "synthetic",
+      "generator": "heavy",
+      "seed": 11,
+      "n_jobs": 300,
+      "cluster_cores": 16,
+      "offered_load": 1.0,
+      "mean_interarrival": 10.687292,
+      "runtime_estimate_error": 0.0
+    },
+    "strategy": "fifo",
+    "strategy_params": {},
+    "strategy_dispatch_note": "team engine fifo (FIFOPolicy, {'strict_head_of_line': True}): wait-behind-head (if the head job does not fit the free CPU cores, no other job starts)",
+    "cluster_cores": 16,
+    "engine": "team",
+    "engine_version": "adaptive-scheduler 0.1.0@33a6d3a6a1f0",
+    "package_version": "0.1.0",
+    "config_hash": "985e39fa7600",
+    "timestamp": "2026-11-01T08:31:46+00:00"
+  }
+}

@@ -1,0 +1,15 @@
+# RQ3 control: adaptive with adaptation_gain 0 (fixed weights), otherwise identical to
+# batch_study.yaml. Compare against the adaptive rows there: the difference is the adaptation.
+cluster_cores: 16
+workloads:
+  - synth:light:n=300:seed=7
+  - synth:heavy:n=300:seed=7
+  - synth:short_heavy:n=300:seed=7
+  - synth:mixed:n=300:seed=7
+  - synth:wide_jobs:n=300:seed=7
+strategies: [adaptive]
+strategy_params:
+  adaptive: {base_wait_weight: 0.35, base_short_weight: 0.45, base_pack_weight: 0.20,
+             adaptation_gain: 0.0, enable_backfill: true}
+repeats: {seeds: [7, 11, 13]}
+output_dir: results/

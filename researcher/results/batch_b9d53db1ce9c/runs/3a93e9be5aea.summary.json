@@ -1,0 +1,37 @@
+{
+  "strategy": "sjf",
+  "workload": "synth:short_heavy:n=300:seed=11",
+  "cluster_cores": 16,
+  "total_jobs": 300,
+  "average_waiting_time": 104.30333333333333,
+  "max_waiting_time": 1834,
+  "cpu_utilization": 72.96108399691754,
+  "makespan": 7786,
+  "bounded_slowdown": 5.863571494294025,
+  "tau": 10,
+  "average_turnaround_time": 294.88666666666666,
+  "utilization_interval": "first arrival to last completion (makespan)",
+  "metadata": {
+    "run_id": "3a93e9be5aea",
+    "workload_id": "synth:short_heavy:n=300:seed=11",
+    "workload_params": {
+      "source": "synthetic",
+      "generator": "short_heavy",
+      "seed": 11,
+      "n_jobs": 300,
+      "cluster_cores": 16,
+      "offered_load": 1.0,
+      "mean_interarrival": 18.935833,
+      "runtime_estimate_error": 0.0
+    },
+    "strategy": "sjf",
+    "strategy_params": {},
+    "strategy_dispatch_note": "fake engine SJF: queue ordered by (runtime, arrival_time, job_id); wait-behind-head (if the shortest job does not fit the free CPU cores, no other job starts)",
+    "cluster_cores": 16,
+    "engine": "fake",
+    "engine_version": "fake-0.1",
+    "package_version": "0.1.0",
+    "config_hash": "83a87b224908",
+    "timestamp": "2026-11-01T06:53:37+00:00"
+  }
+}
